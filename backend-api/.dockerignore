@@ -1,0 +1,11 @@
+bin/
+obj/
+**/bin/
+**/obj/
+*.user
+.vs/
+.tts-venv/
+voices/
+app.db
+app.db-*
+storage/

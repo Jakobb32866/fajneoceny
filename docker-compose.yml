@@ -1,0 +1,23 @@
+services:
+  backend-api:
+    build:
+      context: ./backend-api
+    ports:
+      - "8080:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+
+  # Expo dev server — serves the web build directly and the native JS
+  # bundle for Expo Go on a phone/emulator (scan the printed QR code).
+  # Set REACT_NATIVE_PACKAGER_HOSTNAME to the host's LAN IP so a phone
+  # on the same network can reach it, e.g.:
+  #   REACT_NATIVE_PACKAGER_HOSTNAME=192.168.1.50 docker compose --profile dev up mobile-app
+  mobile-app:
+    build:
+      context: ./mobile-app
+    ports:
+      - "8081:8081"
+    environment:
+      REACT_NATIVE_PACKAGER_HOSTNAME: ${REACT_NATIVE_PACKAGER_HOSTNAME:-localhost}
+    profiles:
+      - dev

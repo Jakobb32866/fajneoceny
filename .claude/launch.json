@@ -1,0 +1,19 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "backend-api",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": ["run", "--urls", "http://localhost:8080"],
+      "cwd": "backend-api",
+      "port": 8080
+    },
+    {
+      "name": "mobile-app-web",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["expo", "start", "--web", "--port", "8090"],
+      "cwd": "mobile-app",
+      "port": 8090
+    }
+  ]
+}

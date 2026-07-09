@@ -1,0 +1,15 @@
+.DS_Store
+.claude/settings.local.json
+
+# .NET
+backend-api/bin/
+backend-api/obj/
+backend-api/app.db
+backend-api/app.db-*
+backend-api/storage/
+backend-api/.tts-venv/
+backend-api/voices/
+
+# Node / Expo (mobile-app has its own .gitignore too)
+mobile-app/node_modules/
+mobile-app/.expo/

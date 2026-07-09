@@ -1,0 +1,15 @@
+bin/
+obj/
+*.user
+.vs/
+
+# local sqlite db
+app.db
+app.db-*
+
+# uploaded files
+storage/
+
+# local Piper TTS install (Docker installs its own inside the image)
+.tts-venv/
+voices/
