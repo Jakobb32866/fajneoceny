@@ -6,18 +6,43 @@ services:
       - "8080:8080"
     environment:
       ASPNETCORE_ENVIRONMENT: Production
+      # Point flashcard generation at the local Ollama server (OpenAI-compatible
+      # endpoint). Leave Ai__BaseUrl empty to fall back to the offline heuristic
+      # generator instead. qwen2.5:3b is the smallest Qwen that reliably emits
+      # the JSON array the generator expects (~2 GB on disk, ~4 GB RAM, CPU-only).
+      Ai__BaseUrl: http://ollama:11434/v1
+      Ai__ApiKey: ollama          # not checked locally, but the field must be non-empty
+      Ai__Model: qwen2.5:3b
+    depends_on:
+      model-puller:
+        condition: service_completed_successfully
 
-  # Expo dev server — serves the web build directly and the native JS
-  # bundle for Expo Go on a phone/emulator (scan the printed QR code).
-  # Set REACT_NATIVE_PACKAGER_HOSTNAME to the host's LAN IP so a phone
-  # on the same network can reach it, e.g.:
-  #   REACT_NATIVE_PACKAGER_HOSTNAME=192.168.1.50 docker compose --profile dev up mobile-app
+  # Local LLM server exposing an OpenAI-compatible API at :11434.
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-models:/root/.ollama   # persist pulled models across restarts
+
+  # One-shot: pulls the Qwen model into the shared volume, then exits. The
+  # backend waits for this to complete so the first quiz request doesn't race
+  # the download.
+  model-puller:
+    image: ollama/ollama:latest
+    depends_on:
+      - ollama
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["ollama", "pull", "qwen2.5:3b"]
+    restart: "no"
+
+  # Expo dev server — web build only, viewable at http://localhost:8081.
   mobile-app:
     build:
       context: ./mobile-app
     ports:
       - "8081:8081"
-    environment:
-      REACT_NATIVE_PACKAGER_HOSTNAME: ${REACT_NATIVE_PACKAGER_HOSTNAME:-localhost}
-    profiles:
-      - dev
+
+volumes:
+  ollama-models:

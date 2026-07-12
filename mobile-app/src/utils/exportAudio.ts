@@ -1,6 +1,23 @@
+import { Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { api } from '../api/client';
+
+/**
+ * Triggers a browser download of the given blob by clicking a temporary
+ * object-URL anchor. Web-only: expo-sharing isn't available in the browser,
+ * so the native share-sheet flow below never fires there.
+ */
+function downloadBlobInBrowser(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
 
 function blobToBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -28,6 +45,13 @@ export async function exportFlashcardsAudio(flashcardIds: string[]): Promise<voi
   }
 
   const blob = await response.blob();
+
+  // On web there's no OS share sheet — save straight to the user's computer.
+  if (Platform.OS === 'web') {
+    downloadBlobInBrowser(blob, `fiszki-${Date.now()}.wav`);
+    return;
+  }
+
   const base64 = await blobToBase64(blob);
   const fileUri = `${FileSystem.cacheDirectory}fiszki-${Date.now()}.wav`;
   await FileSystem.writeAsStringAsync(fileUri, base64, { encoding: FileSystem.EncodingType.Base64 });

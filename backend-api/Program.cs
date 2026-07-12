@@ -29,7 +29,11 @@ builder.Services.AddSingleton<IDocumentTextExtractionService, DocumentTextExtrac
 builder.Services.AddSingleton<ISpacedRepetitionService, Sm2SpacedRepetitionService>();
 builder.Services.AddSingleton<IDailyFlashcardSelector, DailyFlashcardSelector>();
 builder.Services.AddSingleton<HeuristicFlashcardGenerationService>();
-builder.Services.AddHttpClient<AiFlashcardGenerationService>();
+// Local LLM inference (Ollama, CPU) can take well over HttpClient's default
+// 100s for a multi-card request — give it generous headroom so slow-but-valid
+// responses aren't cancelled into the heuristic fallback.
+builder.Services.AddHttpClient<AiFlashcardGenerationService>(client =>
+    client.Timeout = TimeSpan.FromMinutes(5));
 builder.Services.AddSingleton<IFlashcardGenerationService>(sp => sp.GetRequiredService<AiFlashcardGenerationService>());
 
 builder.Services.AddSingleton<ITextToSpeechService, PiperTextToSpeechService>();
@@ -54,7 +58,13 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseCors();
-app.UseHttpsRedirection();
+// Only redirect to HTTPS in development. In the container we listen on plain
+// HTTP (:8080); redirecting would 307 browser fetches to an unserved https://
+// URL, breaking the audio download and surfacing as an opaque/CORS-like error.
+if (app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
 
 app.MapSubjectEndpoints();
 app.MapLessonEndpoints();

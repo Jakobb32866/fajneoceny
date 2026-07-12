@@ -53,8 +53,9 @@ public class AiFlashcardGenerationService(
         var prompt =
             $"Na podstawie poniższych notatek/materiałów z zajęć utwórz dokładnie {count} fiszek\n" +
             $"(pytanie i odpowiedź) na poziomie trudności {difficultyLabel}.\n" +
-            "Odpowiedz WYŁĄCZNIE poprawnym JSON-em: tablicą obiektów " +
-            "[{\"question\": \"...\", \"answer\": \"...\"}].\n" +
+            "Odpowiedz WYŁĄCZNIE poprawnym JSON-em: obiektem z polem \"flashcards\" " +
+            "będącym tablicą obiektów, np. " +
+            "{\"flashcards\": [{\"question\": \"...\", \"answer\": \"...\"}]}.\n" +
             "Materiał źródłowy:\n---\n" +
             $"{Truncate(sourceText, 12000)}\n---";
 
@@ -67,6 +68,10 @@ public class AiFlashcardGenerationService(
                 new { role = "user", content = prompt },
             },
             temperature = 0.7,
+            // Constrain the model to emit syntactically valid JSON (supported by
+            // OpenAI and Ollama). Forces a top-level object, which is why the
+            // prompt asks for {"flashcards": [...]} rather than a bare array.
+            response_format = new { type = "json_object" },
         };
 
         using var request = new HttpRequestMessage(HttpMethod.Post, $"{_options.BaseUrl.TrimEnd('/')}/chat/completions")
@@ -85,16 +90,19 @@ public class AiFlashcardGenerationService(
         var content = payload?.Choices?.FirstOrDefault()?.Message?.Content
             ?? throw new InvalidOperationException("Empty AI response");
 
-        var jsonStart = content.IndexOf('[');
-        var jsonEnd = content.LastIndexOf(']');
+        // response_format=json_object yields a top-level object. Slice to the
+        // outermost {...} in case the model wraps it in prose or code fences.
+        var jsonStart = content.IndexOf('{');
+        var jsonEnd = content.LastIndexOf('}');
         if (jsonStart < 0 || jsonEnd < jsonStart)
-            throw new InvalidOperationException("AI response did not contain a JSON array");
+            throw new InvalidOperationException("AI response did not contain a JSON object");
 
         var json = content[jsonStart..(jsonEnd + 1)];
-        var cards = JsonSerializer.Deserialize<List<GeneratedFlashcard>>(json, new JsonSerializerOptions
+        var wrapper = JsonSerializer.Deserialize<FlashcardsWrapper>(json, new JsonSerializerOptions
         {
             PropertyNameCaseInsensitive = true,
-        }) ?? [];
+        });
+        var cards = wrapper?.Flashcards ?? [];
 
         return cards.Count == 0
             ? throw new InvalidOperationException("AI returned zero flashcards")
@@ -103,6 +111,12 @@ public class AiFlashcardGenerationService(
 
     private static string Truncate(string text, int maxLength) =>
         text.Length <= maxLength ? text : text[..maxLength];
+
+    private class FlashcardsWrapper
+    {
+        [JsonPropertyName("flashcards")]
+        public List<GeneratedFlashcard>? Flashcards { get; set; }
+    }
 
     private class ChatCompletionResponse
     {
