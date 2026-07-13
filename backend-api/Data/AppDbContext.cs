@@ -13,6 +13,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<GradingScheme> GradingSchemes => Set<GradingScheme>();
     public DbSet<GradingComponent> GradingComponents => Set<GradingComponent>();
     public DbSet<GradeEntry> GradeEntries => Set<GradeEntry>();
+    public DbSet<Deck> Decks => Set<Deck>();
     public DbSet<Flashcard> Flashcards => Set<Flashcard>();
     public DbSet<SpacedRepetitionState> SpacedRepetitionStates => Set<SpacedRepetitionState>();
     public DbSet<QuizSession> QuizSessions => Set<QuizSession>();
@@ -48,6 +49,23 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             .WithOne(f => f.Lesson)
             .HasForeignKey(f => f.LessonId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<Lesson>()
+            .HasMany(l => l.Decks)
+            .WithOne(d => d.Lesson)
+            .HasForeignKey(d => d.LessonId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // Deleting a deck removes its cards. A card also has a direct LessonId
+        // (kept for the daily/stack selectors); deleting the lesson cascades
+        // through both paths, which SQLite permits.
+        modelBuilder.Entity<Deck>()
+            .HasMany(d => d.Flashcards)
+            .WithOne(f => f.Deck)
+            .HasForeignKey(f => f.DeckId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<Deck>().Property(d => d.Name).HasMaxLength(200);
 
         modelBuilder.Entity<GradingScheme>()
             .HasMany(g => g.Components)

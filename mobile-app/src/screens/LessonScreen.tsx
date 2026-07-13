@@ -16,6 +16,8 @@ import {
   View,
 } from 'react-native';
 import { api } from '../api/client';
+import { RichNoteEditor } from '../components/RichNoteEditor';
+import { confirmAsync } from '../utils/confirm';
 import type { RootStackParamList } from '../navigation/types';
 import type { Difficulty, LessonDetail } from '../api/types';
 
@@ -26,6 +28,15 @@ const DIFFICULTIES: { value: Difficulty; label: string }[] = [
   { value: 'Medium', label: 'Średni' },
   { value: 'Hard', label: 'Ciężki' },
 ];
+
+/** Polish plural for "fiszka" (card): 1 fiszka, 2–4 fiszki, 5+ fiszek. */
+function cardWord(n: number): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (n === 1) return 'fiszka';
+  if (mod10 >= 2 && mod10 <= 4 && !(mod100 >= 12 && mod100 <= 14)) return 'fiszki';
+  return 'fiszek';
+}
 
 export function LessonScreen({ route, navigation }: Props) {
   const { lessonId, lessonTitle } = route.params;
@@ -69,14 +80,29 @@ export function LessonScreen({ route, navigation }: Props) {
     setQuizModalVisible(false);
     setGenerating(true);
     try {
-      const cards = await api.createQuiz(lessonId, count, difficulty);
-      navigation.navigate('QuizPlayer', { title: lessonTitle, cards });
+      const deck = await api.createQuiz(lessonId, count, difficulty);
+      load();
+      navigation.navigate('QuizPlayer', { title: deck.name, cards: deck.flashcards });
     } catch (e) {
       Alert.alert('Nie udało się utworzyć quizu', String(e));
     } finally {
       setGenerating(false);
       load();
     }
+  };
+
+  const createEmptyDeck = async () => {
+    try {
+      const deck = await api.createDeck(lessonId);
+      navigation.navigate('DeckEditor', { deckId: deck.id, lessonId });
+    } catch (e) {
+      Alert.alert('Nie udało się utworzyć talii', String(e));
+    }
+  };
+
+  const removeDeck = async (deckId: string, name: string) => {
+    const ok = await confirmAsync('Usunąć talię?', `„${name}" i jej fiszki zostaną usunięte.`);
+    if (ok) api.deleteDeck(deckId).then(load);
   };
 
   if (!lesson) {
@@ -93,13 +119,7 @@ export function LessonScreen({ route, navigation }: Props) {
 
       <View>
         <Text style={styles.sectionTitle}>Notatki</Text>
-        <TextInput
-          style={styles.notesInput}
-          multiline
-          placeholder="Pisz notatki z zajęć…"
-          value={noteText}
-          onChangeText={onChangeNote}
-        />
+        <RichNoteEditor value={noteText} onChangeText={onChangeNote} placeholder="Pisz notatki z zajęć…" />
       </View>
 
       <View>
@@ -136,27 +156,55 @@ export function LessonScreen({ route, navigation }: Props) {
 
       <View>
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Fiszki ({lesson.flashcards.length})</Text>
+          <Text style={styles.sectionTitle}>Talie fiszek ({lesson.decks.length})</Text>
         </View>
 
-        {lesson.flashcards.length === 0 ? (
-          <Text style={styles.empty}>Brak fiszek — wygeneruj quiz poniżej.</Text>
+        {lesson.decks.length === 0 ? (
+          <Text style={styles.empty}>Brak talii — wygeneruj quiz lub utwórz talię ręcznie.</Text>
         ) : (
-          <TouchableOpacity
-            style={styles.reviewExistingButton}
-            onPress={() => navigation.navigate('QuizPlayer', { title: lesson.title, cards: lesson.flashcards })}
-          >
-            <Text style={styles.reviewExistingText}>▶ Powtórz istniejące fiszki</Text>
-          </TouchableOpacity>
+          lesson.decks.map((deck) => (
+            <View key={deck.id} style={styles.deckCard}>
+              <View style={styles.deckInfo}>
+                <Text style={styles.deckName} numberOfLines={1}>
+                  {deck.isAiGenerated ? '✨ ' : '✍️ '}
+                  {deck.name}
+                </Text>
+                <Text style={styles.deckMeta}>
+                  {deck.flashcards.length} {cardWord(deck.flashcards.length)}
+                </Text>
+              </View>
+              <View style={styles.deckActions}>
+                <TouchableOpacity
+                  disabled={deck.flashcards.length === 0}
+                  onPress={() => navigation.navigate('QuizPlayer', { title: deck.name, cards: deck.flashcards })}
+                >
+                  <Text style={[styles.deckAction, deck.flashcards.length === 0 && styles.deckActionDisabled]}>
+                    ▶ Powtórz
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => navigation.navigate('DeckEditor', { deckId: deck.id, lessonId })}>
+                  <Text style={styles.deckAction}>Edytuj</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => removeDeck(deck.id, deck.name)}>
+                  <Text style={[styles.deckAction, styles.deckActionDanger]}>Usuń</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ))
         )}
 
-        <TouchableOpacity
-          style={styles.generateButton}
-          disabled={generating}
-          onPress={() => setQuizModalVisible(true)}
-        >
-          <Text style={styles.generateButtonText}>{generating ? 'Generuję…' : '✨ Wygeneruj nowy quiz'}</Text>
-        </TouchableOpacity>
+        <View style={styles.deckCreateRow}>
+          <TouchableOpacity
+            style={[styles.generateButton, styles.deckCreateButton]}
+            disabled={generating}
+            onPress={() => setQuizModalVisible(true)}
+          >
+            <Text style={styles.generateButtonText}>{generating ? 'Generuję…' : '✨ Wygeneruj quiz (AI)'}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.newDeckButton, styles.deckCreateButton]} onPress={createEmptyDeck}>
+            <Text style={styles.newDeckButtonText}>+ Nowa talia</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <QuizConfigModal
@@ -266,24 +314,32 @@ const styles = StyleSheet.create({
   title: { fontSize: 22, fontWeight: '700' },
   sectionTitle: { fontSize: 16, fontWeight: '700', marginBottom: 8 },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  notesInput: {
-    minHeight: 120,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 12,
-    padding: 12,
-    textAlignVertical: 'top',
-    fontSize: 14,
-  },
   linkAction: { color: '#2563eb', fontWeight: '600' },
   empty: { color: '#999' },
   sourceRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8 },
   sourceIcon: { fontSize: 16 },
   sourceTitle: { flex: 1, fontSize: 14 },
-  reviewExistingButton: { backgroundColor: '#eef2ff', borderRadius: 10, padding: 12, marginBottom: 8 },
-  reviewExistingText: { color: '#3730a3', fontWeight: '600', textAlign: 'center' },
+  deckCard: {
+    borderWidth: 1,
+    borderColor: '#eee',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 8,
+    gap: 8,
+  },
+  deckInfo: { gap: 2 },
+  deckName: { fontSize: 15, fontWeight: '700', color: '#111827' },
+  deckMeta: { fontSize: 12, color: '#6b7280' },
+  deckActions: { flexDirection: 'row', gap: 18, alignItems: 'center' },
+  deckAction: { fontSize: 13, fontWeight: '600', color: '#2563eb' },
+  deckActionDisabled: { color: '#9ca3af' },
+  deckActionDanger: { color: '#dc2626' },
+  deckCreateRow: { flexDirection: 'row', gap: 8, marginTop: 4 },
+  deckCreateButton: { flex: 1 },
   generateButton: { backgroundColor: '#111827', borderRadius: 12, padding: 14 },
   generateButtonText: { color: 'white', fontWeight: '700', textAlign: 'center' },
+  newDeckButton: { backgroundColor: '#eef2ff', borderRadius: 12, padding: 14 },
+  newDeckButtonText: { color: '#3730a3', fontWeight: '700', textAlign: 'center' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', padding: 24 },
   modalCard: { backgroundColor: 'white', borderRadius: 16, padding: 20, gap: 10 },
   modalTitle: { fontSize: 17, fontWeight: '700', marginBottom: 4 },

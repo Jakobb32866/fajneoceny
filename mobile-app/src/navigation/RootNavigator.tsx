@@ -1,6 +1,7 @@
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { DailyFlashcardsScreen } from '../screens/DailyFlashcardsScreen';
 import { DashboardScreen } from '../screens/DashboardScreen';
+import { DeckEditorScreen } from '../screens/DeckEditorScreen';
 import { LessonScreen } from '../screens/LessonScreen';
 import { QuizPlayerScreen } from '../screens/QuizPlayerScreen';
 import { SubjectScreen } from '../screens/SubjectScreen';
@@ -23,6 +24,7 @@ export function RootNavigator() {
         options={({ route }) => ({ title: route.params.lessonTitle })}
       />
       <Stack.Screen name="QuizPlayer" component={QuizPlayerScreen} options={{ title: 'Quiz' }} />
+      <Stack.Screen name="DeckEditor" component={DeckEditorScreen} options={{ title: 'Edycja talii' }} />
       <Stack.Screen
         name="DailyFlashcards"
         component={DailyFlashcardsScreen}
