@@ -1,5 +1,6 @@
 using BackendApi.Data;
 using BackendApi.Domain;
+using BackendApi.Services;
 using BackendApi.Services.Flashcards;
 using BackendApi.Services.Tts;
 using Microsoft.EntityFrameworkCore;
@@ -29,13 +30,12 @@ public static class FlashcardEndpoints
             var lesson = await db.Lessons
                 .Include(l => l.Notes)
                 .Include(l => l.Sources)
-                .Include(l => l.Flashcards)
                 .FirstOrDefaultAsync(l => l.Id == lessonId);
             if (lesson is null) return Results.NotFound();
 
             var sourceText = string.Join("\n\n", new[]
                 {
-                    string.Join("\n", lesson.Notes.Select(n => n.Content)),
+                    string.Join("\n", lesson.Notes.Select(n => HtmlText.Strip(n.Content))),
                     string.Join("\n", lesson.Sources.Where(s => s.ExtractedText is not null).Select(s => s.ExtractedText)),
                 }.Where(s => !string.IsNullOrWhiteSpace(s)));
 
@@ -46,15 +46,27 @@ public static class FlashcardEndpoints
 
             var generated = await generator.GenerateAsync(sourceText, request.Count, request.Difficulty);
 
+            // Each generation run becomes its own named deck.
+            var deck = new Deck
+            {
+                LessonId = lessonId,
+                Name = await DeckEndpoints.NextDeckNameAsync(db, lessonId),
+                IsAiGenerated = true,
+                Difficulty = request.Difficulty,
+            };
+            db.Decks.Add(deck);
+
             var flashcards = generated.Select(g => new Flashcard
             {
                 LessonId = lessonId,
+                DeckId = deck.Id,
                 Question = g.Question,
                 Answer = g.Answer,
                 Difficulty = request.Difficulty,
             }).ToList();
 
             db.Flashcards.AddRange(flashcards);
+            deck.Flashcards = flashcards;
 
             var session = new QuizSession
             {
@@ -67,7 +79,7 @@ public static class FlashcardEndpoints
 
             await db.SaveChangesAsync();
 
-            return Results.Ok(flashcards.Select(f => new FlashcardDto(f.Id, f.Question, f.Answer, f.Difficulty)));
+            return Results.Ok(deck.ToDto());
         });
 
         app.MapGet("/api/lessons/{lessonId:guid}/flashcards", async (Guid lessonId, AppDbContext db) =>

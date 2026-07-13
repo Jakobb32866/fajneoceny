@@ -38,13 +38,21 @@ export interface FlashcardDto {
   difficulty: Difficulty;
 }
 
+export interface DeckDto {
+  id: string;
+  name: string;
+  isAiGenerated: boolean;
+  difficulty: Difficulty | null;
+  flashcards: FlashcardDto[];
+}
+
 export interface LessonDetail {
   id: string;
   title: string;
   order: number;
   noteContent: string | null;
   sources: SourceDto[];
-  flashcards: FlashcardDto[];
+  decks: DeckDto[];
 }
 
 export interface DraftGradingComponent {

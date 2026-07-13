@@ -13,6 +13,12 @@ public class Flashcard
     public Guid LessonId { get; set; }
     public Lesson? Lesson { get; set; }
 
+    // Nullable so existing rows survive the migration; a startup backfill wraps
+    // any deck-less cards into a per-lesson deck, after which this is always set
+    // for cards created through the app.
+    public Guid? DeckId { get; set; }
+    public Deck? Deck { get; set; }
+
     public string Question { get; set; } = string.Empty;
     public string Answer { get; set; } = string.Empty;
     public Difficulty Difficulty { get; set; }

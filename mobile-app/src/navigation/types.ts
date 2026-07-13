@@ -5,6 +5,7 @@ export type RootStackParamList = {
   Subject: { subjectId: string; subjectName: string };
   Lesson: { lessonId: string; lessonTitle: string };
   QuizPlayer: { title: string; cards: FlashcardDto[] };
+  DeckEditor: { deckId: string; lessonId: string };
   DailyFlashcards: undefined;
 };
 

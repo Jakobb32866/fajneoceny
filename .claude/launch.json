@@ -14,6 +14,12 @@
       "runtimeArgs": ["expo", "start", "--web", "--port", "8090"],
       "cwd": "mobile-app",
       "port": 8090
+    },
+    {
+      "name": "static-site",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "8070"],
+      "port": 8070
     }
   ]
 }

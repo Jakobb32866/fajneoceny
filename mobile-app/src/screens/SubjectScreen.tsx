@@ -27,6 +27,8 @@ export function SubjectScreen({ route, navigation }: Props) {
   const [tab, setTab] = useState<Tab>('lessons');
   const [lessons, setLessons] = useState<LessonSummary[] | null>(null);
   const [createVisible, setCreateVisible] = useState(false);
+  const [syllabusChooserVisible, setSyllabusChooserVisible] = useState(false);
+  const [pasteVisible, setPasteVisible] = useState(false);
 
   const load = useCallback(() => {
     api.listLessons(subjectId).then(setLessons).catch(() => setLessons([]));
@@ -34,7 +36,15 @@ export function SubjectScreen({ route, navigation }: Props) {
 
   useFocusEffect(load);
 
-  const pickSyllabus = async () => {
+  const onSyllabusLoaded = (count: number) => {
+    Alert.alert(
+      'Zasady zaliczenia wczytane',
+      `Znaleziono ${count} składników oceny. Sprawdź i popraw je w zakładce "Arkusz ocen".`,
+    );
+    setTab('grades');
+  };
+
+  const pickSyllabusFile = async () => {
     const result = await DocumentPicker.getDocumentAsync({
       type: [
         'application/pdf',
@@ -50,13 +60,19 @@ export function SubjectScreen({ route, navigation }: Props) {
         name: file.name,
         mimeType: file.mimeType,
       });
-      Alert.alert(
-        'Zasady zaliczenia wczytane',
-        `Znaleziono ${uploadResult.draftComponents.length} składników oceny. Sprawdź i popraw je w zakładce "Arkusz ocen".`,
-      );
-      setTab('grades');
+      onSyllabusLoaded(uploadResult.draftComponents.length);
     } catch (e) {
       Alert.alert('Nie udało się wczytać pliku', String(e));
+    }
+  };
+
+  const submitPastedSyllabus = async (text: string) => {
+    try {
+      const uploadResult = await api.uploadSyllabusText(subjectId, text);
+      setPasteVisible(false);
+      onSyllabusLoaded(uploadResult.draftComponents.length);
+    } catch (e) {
+      Alert.alert('Nie udało się wczytać tekstu', String(e));
     }
   };
 
@@ -75,8 +91,8 @@ export function SubjectScreen({ route, navigation }: Props) {
 
       {tab === 'lessons' ? (
         <>
-          <TouchableOpacity style={styles.syllabusButton} onPress={pickSyllabus}>
-            <Text style={styles.syllabusButtonText}>📄 Wczytaj zasady zaliczenia (PDF/Word)</Text>
+          <TouchableOpacity style={styles.syllabusButton} onPress={() => setSyllabusChooserVisible(true)}>
+            <Text style={styles.syllabusButtonText}>📄 Wgraj zasady zaliczenia</Text>
           </TouchableOpacity>
 
           {lessons === null ? (
@@ -112,11 +128,103 @@ export function SubjectScreen({ route, navigation }: Props) {
               load();
             }}
           />
+
+          <SyllabusChooserModal
+            visible={syllabusChooserVisible}
+            onClose={() => setSyllabusChooserVisible(false)}
+            onPickFile={() => {
+              setSyllabusChooserVisible(false);
+              pickSyllabusFile();
+            }}
+            onPasteText={() => {
+              setSyllabusChooserVisible(false);
+              setPasteVisible(true);
+            }}
+          />
+
+          <PasteSyllabusModal
+            visible={pasteVisible}
+            onClose={() => setPasteVisible(false)}
+            onSubmit={submitPastedSyllabus}
+          />
         </>
       ) : (
         <GradeSheet subjectId={subjectId} />
       )}
     </View>
+  );
+}
+
+function SyllabusChooserModal({
+  visible,
+  onClose,
+  onPickFile,
+  onPasteText,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onPickFile: () => void;
+  onPasteText: () => void;
+}) {
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={styles.modalOverlay} onPress={onClose}>
+        <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
+          <Text style={styles.modalTitle}>Wgraj zasady zaliczenia</Text>
+          <TouchableOpacity style={styles.choiceButton} onPress={onPickFile}>
+            <Text style={styles.choiceIcon}>📄</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.choiceTitle}>Wgraj plik z dysku</Text>
+              <Text style={styles.choiceSubtitle}>PDF lub Word (.docx)</Text>
+            </View>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.choiceButton} onPress={onPasteText}>
+            <Text style={styles.choiceIcon}>📋</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.choiceTitle}>Wklej tekst</Text>
+              <Text style={styles.choiceSubtitle}>Skopiuj zasady z maila lub strony</Text>
+            </View>
+          </TouchableOpacity>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+function PasteSyllabusModal({
+  visible,
+  onClose,
+  onSubmit,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onSubmit: (text: string) => void;
+}) {
+  const [text, setText] = useState('');
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={styles.modalOverlay} onPress={onClose}>
+        <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
+          <Text style={styles.modalTitle}>Wklej zasady zaliczenia</Text>
+          <TextInput
+            style={styles.pasteInput}
+            multiline
+            textAlignVertical="top"
+            placeholder="Wklej tutaj treść zasad zaliczenia…"
+            value={text}
+            onChangeText={setText}
+          />
+          <TouchableOpacity
+            style={[styles.submitButton, !text.trim() && styles.submitButtonDisabled]}
+            disabled={!text.trim()}
+            onPress={() => text.trim() && onSubmit(text.trim())}
+          >
+            <Text style={styles.submitText}>Analizuj</Text>
+          </TouchableOpacity>
+        </Pressable>
+      </Pressable>
+    </Modal>
   );
 }
 
@@ -178,5 +286,26 @@ const styles = StyleSheet.create({
   modalTitle: { fontSize: 17, fontWeight: '700' },
   input: { borderWidth: 1, borderColor: '#ddd', borderRadius: 8, padding: 10, fontSize: 14 },
   submitButton: { backgroundColor: '#111827', borderRadius: 10, paddingVertical: 12, alignItems: 'center', marginTop: 4 },
+  submitButtonDisabled: { backgroundColor: '#9ca3af' },
   submitText: { color: 'white', fontWeight: '700' },
+  choiceButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderRadius: 12,
+    padding: 14,
+  },
+  choiceIcon: { fontSize: 22 },
+  choiceTitle: { fontSize: 15, fontWeight: '700', color: '#111827' },
+  choiceSubtitle: { fontSize: 12, color: '#6b7280', marginTop: 2 },
+  pasteInput: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    padding: 10,
+    fontSize: 14,
+    minHeight: 160,
+  },
 });

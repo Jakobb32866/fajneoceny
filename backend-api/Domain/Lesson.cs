@@ -13,4 +13,5 @@ public class Lesson
     public List<Note> Notes { get; set; } = [];
     public List<Source> Sources { get; set; } = [];
     public List<Flashcard> Flashcards { get; set; } = [];
+    public List<Deck> Decks { get; set; } = [];
 }

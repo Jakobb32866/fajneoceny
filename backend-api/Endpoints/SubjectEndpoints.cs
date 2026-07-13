@@ -10,6 +10,7 @@ public record CreateSubjectRequest(string Name, string? Description);
 public record SubjectSummary(Guid Id, string Name, string? Description, int LessonCount, double? CurrentEstimatePercent);
 public record DraftGradingComponentDto(string Name, GradeCategory Category, double WeightPercent);
 public record SyllabusUploadResult(Guid SubjectId, string RawTextPreview, List<DraftGradingComponentDto> DraftComponents);
+public record SyllabusTextRequest(string Text);
 public record GradingComponentInput(string Name, GradeCategory Category, double WeightPercent);
 public record GradeEntryDto(Guid Id, string Name, double Score, double MaxScore, DateTimeOffset Date);
 public record GradingComponentDto(Guid Id, string Name, GradeCategory Category, double WeightPercent, bool IsAdHoc, double? AverageScorePercent, List<GradeEntryDto> Entries);
@@ -18,6 +19,46 @@ public record AddGradeEntryRequest(string Name, double Score, double MaxScore);
 
 public static class SubjectEndpoints
 {
+    /// <summary>
+    /// Runs the grading-scheme extractor over the given syllabus text, replaces
+    /// the subject's draft components with the result, persists, and returns the
+    /// upload result. Shared by the file and pasted-text endpoints.
+    /// </summary>
+    private static async Task<SyllabusUploadResult> ApplySyllabusTextAsync(Subject subject, string rawText, AppDbContext db)
+    {
+        var draft = GradingSchemeExtractor.Extract(rawText);
+
+        var scheme = await db.GradingSchemes.FirstOrDefaultAsync(g => g.SubjectId == subject.Id);
+        if (scheme is null)
+        {
+            scheme = new GradingScheme { SubjectId = subject.Id };
+            db.GradingSchemes.Add(scheme);
+        }
+        else
+        {
+            // Replace the previous components. A direct DB delete avoids the
+            // change-tracking pitfalls of swapping a loaded navigation collection.
+            await db.GradingComponents.Where(c => c.GradingSchemeId == scheme.Id).ExecuteDeleteAsync();
+        }
+
+        db.GradingComponents.AddRange(draft.Select(d => new GradingComponent
+        {
+            GradingSchemeId = scheme.Id,
+            Name = d.Name,
+            Category = d.Category,
+            WeightPercent = d.WeightPercent,
+            IsAdHoc = false,
+        }));
+
+        await db.SaveChangesAsync();
+
+        var preview = rawText.Length > 500 ? rawText[..500] : rawText;
+        return new SyllabusUploadResult(
+            subject.Id,
+            preview,
+            draft.Select(d => new DraftGradingComponentDto(d.Name, d.Category, d.WeightPercent)).ToList());
+    }
+
     public static void MapSubjectEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/subjects").WithTags("Subjects");
@@ -69,7 +110,7 @@ public static class SubjectEndpoints
             IFileStorageService storage,
             IDocumentTextExtractionService extractor) =>
         {
-            var subject = await db.Subjects.Include(s => s.GradingScheme).FirstOrDefaultAsync(s => s.Id == id);
+            var subject = await db.Subjects.FirstOrDefaultAsync(s => s.Id == id);
             if (subject is null) return Results.NotFound();
             if (!extractor.CanHandle(file.FileName))
                 return Results.BadRequest("Only .pdf and .docx syllabus files are supported.");
@@ -84,31 +125,25 @@ public static class SubjectEndpoints
                 subject.SyllabusRawText = extractor.ExtractText(textStream, file.FileName);
             }
 
-            var draft = GradingSchemeExtractor.Extract(subject.SyllabusRawText ?? string.Empty);
-
-            subject.GradingScheme ??= new GradingScheme { SubjectId = subject.Id };
-            subject.GradingScheme.Components = draft
-                .Select(d => new GradingComponent
-                {
-                    GradingSchemeId = subject.GradingScheme.Id,
-                    Name = d.Name,
-                    Category = d.Category,
-                    WeightPercent = d.WeightPercent,
-                    IsAdHoc = false,
-                })
-                .ToList();
-
-            await db.SaveChangesAsync();
-
-            var preview = subject.SyllabusRawText?.Length > 500
-                ? subject.SyllabusRawText[..500]
-                : subject.SyllabusRawText ?? string.Empty;
-
-            return Results.Ok(new SyllabusUploadResult(
-                subject.Id,
-                preview,
-                draft.Select(d => new DraftGradingComponentDto(d.Name, d.Category, d.WeightPercent)).ToList()));
+            var result = await ApplySyllabusTextAsync(subject, subject.SyllabusRawText ?? string.Empty, db);
+            return Results.Ok(result);
         }).DisableAntiforgery();
+
+        // Same outcome as the file upload, but from raw text the student pasted
+        // in (e.g. copied from an email or a course page) instead of a document.
+        group.MapPost("/{id:guid}/syllabus/text", async (Guid id, SyllabusTextRequest request, AppDbContext db) =>
+        {
+            var subject = await db.Subjects.FirstOrDefaultAsync(s => s.Id == id);
+            if (subject is null) return Results.NotFound();
+            if (string.IsNullOrWhiteSpace(request.Text))
+                return Results.BadRequest("Pasted syllabus text is empty.");
+
+            subject.SyllabusFileName = null;
+            subject.SyllabusRawText = request.Text;
+
+            var result = await ApplySyllabusTextAsync(subject, request.Text, db);
+            return Results.Ok(result);
+        });
 
         group.MapPut("/{id:guid}/grading-scheme", async (Guid id, List<GradingComponentInput> components, AppDbContext db) =>
         {

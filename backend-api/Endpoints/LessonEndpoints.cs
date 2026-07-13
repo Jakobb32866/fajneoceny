@@ -8,7 +8,7 @@ namespace BackendApi.Endpoints;
 
 public record CreateLessonRequest(string Title);
 public record LessonSummary(Guid Id, string Title, int Order, int FlashcardCount);
-public record LessonDetail(Guid Id, string Title, int Order, string? NoteContent, List<SourceDto> Sources, List<FlashcardDto> Flashcards);
+public record LessonDetail(Guid Id, string Title, int Order, string? NoteContent, List<SourceDto> Sources, List<DeckDto> Decks);
 public record SourceDto(Guid Id, string Title, SourceType Type, string Location);
 public record FlashcardDto(Guid Id, string Question, string Answer, Difficulty Difficulty);
 public record UpsertNoteRequest(string Content);
@@ -47,7 +47,7 @@ public static class LessonEndpoints
             var lesson = await db.Lessons
                 .Include(l => l.Notes)
                 .Include(l => l.Sources)
-                .Include(l => l.Flashcards)
+                .Include(l => l.Decks).ThenInclude(d => d.Flashcards)
                 .FirstOrDefaultAsync(l => l.Id == id);
             if (lesson is null) return Results.NotFound();
 
@@ -57,7 +57,7 @@ public static class LessonEndpoints
                 lesson.Order,
                 lesson.Notes.OrderByDescending(n => n.UpdatedAt).FirstOrDefault()?.Content,
                 lesson.Sources.Select(s => new SourceDto(s.Id, s.Title, s.Type, s.Location)).ToList(),
-                lesson.Flashcards.Select(f => new FlashcardDto(f.Id, f.Question, f.Answer, f.Difficulty)).ToList()));
+                lesson.Decks.OrderBy(d => d.CreatedAt).Select(d => d.ToDto()).ToList()));
         }).WithTags("Lessons");
 
         app.MapDelete("/api/lessons/{id:guid}", async (Guid id, AppDbContext db) =>

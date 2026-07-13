@@ -1,5 +1,6 @@
 import { API_BASE_URL } from './config';
 import type {
+  DeckDto,
   Difficulty,
   FlashcardDto,
   GradeCategory,
@@ -44,6 +45,12 @@ export const api = {
     form.append('file', { uri: file.uri, name: file.name, type: file.mimeType ?? 'application/octet-stream' });
     return request<SyllabusUploadResult>(`/api/subjects/${subjectId}/syllabus`, { method: 'POST', body: form });
   },
+
+  uploadSyllabusText: (subjectId: string, text: string) =>
+    request<SyllabusUploadResult>(`/api/subjects/${subjectId}/syllabus/text`, {
+      method: 'POST',
+      body: JSON.stringify({ text }),
+    }),
 
   saveGradingScheme: (subjectId: string, components: { name: string; category: GradeCategory; weightPercent: number }[]) =>
     request<void>(`/api/subjects/${subjectId}/grading-scheme`, { method: 'PUT', body: JSON.stringify(components) }),
@@ -90,9 +97,35 @@ export const api = {
 
   deleteSource: (id: string) => request<void>(`/api/sources/${id}`, { method: 'DELETE' }),
 
+  // Decks
+  createDeck: (lessonId: string, name?: string) =>
+    request<DeckDto>(`/api/lessons/${lessonId}/decks`, {
+      method: 'POST',
+      body: JSON.stringify({ name: name ?? null }),
+    }),
+
+  renameDeck: (deckId: string, name: string) =>
+    request<void>(`/api/decks/${deckId}`, { method: 'PUT', body: JSON.stringify({ name }) }),
+
+  deleteDeck: (deckId: string) => request<void>(`/api/decks/${deckId}`, { method: 'DELETE' }),
+
+  addCard: (deckId: string, question: string, answer: string, difficulty?: Difficulty) =>
+    request<FlashcardDto>(`/api/decks/${deckId}/cards`, {
+      method: 'POST',
+      body: JSON.stringify({ question, answer, difficulty: difficulty ?? null }),
+    }),
+
+  updateCard: (cardId: string, question: string, answer: string, difficulty?: Difficulty) =>
+    request<FlashcardDto>(`/api/flashcards/${cardId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ question, answer, difficulty: difficulty ?? null }),
+    }),
+
+  deleteCard: (cardId: string) => request<void>(`/api/flashcards/${cardId}`, { method: 'DELETE' }),
+
   // Flashcards / quizzes
   createQuiz: (lessonId: string, count: number, difficulty: Difficulty) =>
-    request<FlashcardDto[]>(`/api/lessons/${lessonId}/quiz`, {
+    request<DeckDto>(`/api/lessons/${lessonId}/quiz`, {
       method: 'POST',
       body: JSON.stringify({ count, difficulty }),
     }),
