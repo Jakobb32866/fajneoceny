@@ -13,6 +13,8 @@ import {
   View,
 } from 'react-native';
 import { api } from '../api/client';
+import { useAuth } from '../auth/AuthContext';
+import { Button } from '../components/ui/Button';
 import type { RootStackParamList } from '../navigation/types';
 import type { SubjectSummary } from '../api/types';
 
@@ -21,6 +23,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Dashboard'>;
 export function DashboardScreen({ navigation }: Props) {
   const [subjects, setSubjects] = useState<SubjectSummary[] | null>(null);
   const [createVisible, setCreateVisible] = useState(false);
+  const { signOut } = useAuth();
 
   const load = useCallback(() => {
     api.listSubjects().then(setSubjects).catch(() => setSubjects([]));
@@ -30,6 +33,9 @@ export function DashboardScreen({ navigation }: Props) {
 
   return (
     <View style={styles.container}>
+      <View style={{ flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: 16, paddingTop: 12 }}>
+        <Button title="Wyloguj" variant="ghost" size="sm" onPress={signOut} />
+      </View>
       <TouchableOpacity style={styles.dailyCard} onPress={() => navigation.navigate('DailyFlashcards')}>
         <Text style={styles.dailyTitle}>📚 Dzisiejsze fiszki</Text>
         <Text style={styles.dailySubtitle}>30 kart dobranych na dziś</Text>

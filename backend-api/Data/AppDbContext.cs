@@ -1,11 +1,13 @@
+using BackendApi.Auth;
 using BackendApi.Domain;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 
 namespace BackendApi.Data;
 
-public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
+public class AppDbContext(DbContextOptions<AppDbContext> options, ICurrentUser currentUser) : DbContext(options)
 {
+    public DbSet<User> Users => Set<User>();
     public DbSet<Subject> Subjects => Set<Subject>();
     public DbSet<Lesson> Lessons => Set<Lesson>();
     public DbSet<Note> Notes => Set<Note>();
@@ -97,5 +99,47 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
         modelBuilder.Entity<Subject>().Property(s => s.Name).HasMaxLength(200);
         modelBuilder.Entity<Lesson>().Property(l => l.Title).HasMaxLength(200);
+
+        modelBuilder.Entity<User>().HasIndex(u => u.Email).IsUnique();
+        modelBuilder.Entity<User>().Property(u => u.Email).HasMaxLength(320);
+
+        // Per-user data isolation: every owned entity is only ever visible
+        // through a query scoped to the current request's user. Note that
+        // EF's FindAsync(id) bypasses these global query filters entirely,
+        // so endpoints must use FirstOrDefaultAsync(e => e.Id == id) instead.
+        modelBuilder.Entity<Subject>().HasQueryFilter(e => e.UserId == currentUser.UserId);
+        modelBuilder.Entity<Lesson>().HasQueryFilter(e => e.UserId == currentUser.UserId);
+        modelBuilder.Entity<Note>().HasQueryFilter(e => e.UserId == currentUser.UserId);
+        modelBuilder.Entity<Source>().HasQueryFilter(e => e.UserId == currentUser.UserId);
+        modelBuilder.Entity<GradingScheme>().HasQueryFilter(e => e.UserId == currentUser.UserId);
+        modelBuilder.Entity<GradingComponent>().HasQueryFilter(e => e.UserId == currentUser.UserId);
+        modelBuilder.Entity<GradeEntry>().HasQueryFilter(e => e.UserId == currentUser.UserId);
+        modelBuilder.Entity<Deck>().HasQueryFilter(e => e.UserId == currentUser.UserId);
+        modelBuilder.Entity<Flashcard>().HasQueryFilter(e => e.UserId == currentUser.UserId);
+        modelBuilder.Entity<SpacedRepetitionState>().HasQueryFilter(e => e.UserId == currentUser.UserId);
+        modelBuilder.Entity<QuizSession>().HasQueryFilter(e => e.UserId == currentUser.UserId);
+    }
+
+    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        StampOwnedEntities();
+        return base.SaveChangesAsync(cancellationToken);
+    }
+
+    public override int SaveChanges()
+    {
+        StampOwnedEntities();
+        return base.SaveChanges();
+    }
+
+    private void StampOwnedEntities()
+    {
+        foreach (var entry in ChangeTracker.Entries<IOwnedByUser>())
+        {
+            if (entry.State == EntityState.Added && entry.Entity.UserId == Guid.Empty)
+            {
+                entry.Entity.UserId = currentUser.UserId;
+            }
+        }
     }
 }

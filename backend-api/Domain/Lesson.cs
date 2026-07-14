@@ -1,8 +1,9 @@
 namespace BackendApi.Domain;
 
-public class Lesson
+public class Lesson : IOwnedByUser
 {
     public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid UserId { get; set; }
     public Guid SubjectId { get; set; }
     public Subject? Subject { get; set; }
 

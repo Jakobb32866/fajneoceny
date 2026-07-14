@@ -3,6 +3,7 @@
     "name": "MobileApp",
     "slug": "MobileApp",
     "version": "1.0.0",
+    "scheme": "fajneoceny",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -22,7 +23,10 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-sharing"
+      "expo-sharing",
+      "expo-font",
+      "expo-secure-store",
+      "expo-web-browser"
     ]
   }
 }

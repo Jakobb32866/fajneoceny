@@ -2,6 +2,7 @@ import { Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { api } from '../api/client';
+import { getTokenSync } from '../api/token';
 
 /**
  * Triggers a browser download of the given blob by clicking a temporary
@@ -34,9 +35,13 @@ function blobToBase64(blob: Blob): Promise<string> {
  * they like (Files, a podcast/audio app, etc.) as a single file.
  */
 export async function exportFlashcardsAudio(flashcardIds: string[]): Promise<void> {
+  const token = getTokenSync();
   const response = await fetch(api.exportAudioUrl(), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
     body: JSON.stringify({ flashcardIds }),
   });
 

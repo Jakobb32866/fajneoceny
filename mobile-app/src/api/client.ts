@@ -1,5 +1,8 @@
 import { API_BASE_URL } from './config';
+import { clearToken, getTokenSync } from './token';
 import type {
+  AuthResponse,
+  AuthUser,
   DeckDto,
   Difficulty,
   FlashcardDto,
@@ -13,16 +16,30 @@ import type {
   SyllabusUploadResult,
 } from './types';
 
+// Registered by AuthContext so a 401 from any request (e.g. an expired token
+// mid-session) can immediately drop the app back to the signed-out state.
+let onUnauthorized: (() => void) | null = null;
+
+export function setUnauthorizedHandler(handler: (() => void) | null) {
+  onUnauthorized = handler;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = getTokenSync();
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
     headers: {
       ...(init?.body && !(init.body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...init?.headers,
     },
   });
 
   if (!response.ok) {
+    if (response.status === 401) {
+      await clearToken();
+      onUnauthorized?.();
+    }
     const text = await response.text().catch(() => '');
     throw new Error(`${init?.method ?? 'GET'} ${path} failed: ${response.status} ${text}`);
   }
@@ -143,4 +160,18 @@ export const api = {
   },
 
   exportAudioUrl: () => `${API_BASE_URL}/api/flashcards/export-audio`,
+
+  // Auth
+  auth: {
+    register: (data: { email: string; password: string; firstName: string; lastName: string; schoolName: string }) =>
+      request<AuthResponse>('/api/auth/register', { method: 'POST', body: JSON.stringify(data) }),
+
+    login: (email: string, password: string) =>
+      request<AuthResponse>('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
+
+    google: (idToken: string, schoolName?: string) =>
+      request<AuthResponse>('/api/auth/google', { method: 'POST', body: JSON.stringify({ idToken, schoolName }) }),
+
+    me: () => request<AuthUser>('/api/auth/me'),
+  },
 };

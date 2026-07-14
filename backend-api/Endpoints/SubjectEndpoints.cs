@@ -62,7 +62,7 @@ public static class SubjectEndpoints
 
     public static void MapSubjectEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/subjects").WithTags("Subjects");
+        var group = app.MapGroup("/api/subjects").WithTags("Subjects").RequireAuthorization();
 
         group.MapGet("/", async (AppDbContext db, IGradeCalculationService gradeCalc) =>
         {
@@ -97,7 +97,7 @@ public static class SubjectEndpoints
 
         group.MapDelete("/{id:guid}", async (Guid id, AppDbContext db) =>
         {
-            var subject = await db.Subjects.FindAsync(id);
+            var subject = await db.Subjects.FirstOrDefaultAsync(e => e.Id == id);
             if (subject is null) return Results.NotFound();
             db.Subjects.Remove(subject);
             await db.SaveChangesAsync();
@@ -213,7 +213,7 @@ public static class SubjectEndpoints
 
         group.MapPost("/grades/components/{componentId:guid}/entries", async (Guid componentId, AddGradeEntryRequest request, AppDbContext db) =>
         {
-            var component = await db.GradingComponents.FindAsync(componentId);
+            var component = await db.GradingComponents.FirstOrDefaultAsync(e => e.Id == componentId);
             if (component is null) return Results.NotFound();
 
             var entry = new GradeEntry
@@ -230,7 +230,7 @@ public static class SubjectEndpoints
 
         group.MapDelete("/grades/entries/{entryId:guid}", async (Guid entryId, AppDbContext db) =>
         {
-            var entry = await db.GradeEntries.FindAsync(entryId);
+            var entry = await db.GradeEntries.FirstOrDefaultAsync(e => e.Id == entryId);
             if (entry is null) return Results.NotFound();
             db.GradeEntries.Remove(entry);
             await db.SaveChangesAsync();

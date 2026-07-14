@@ -7,9 +7,10 @@ public enum Difficulty
     Hard,
 }
 
-public class Flashcard
+public class Flashcard : IOwnedByUser
 {
     public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid UserId { get; set; }
     public Guid LessonId { get; set; }
     public Lesson? Lesson { get; set; }
 
@@ -31,9 +32,10 @@ public class Flashcard
 /// Per-card SM-2 scheduling state. One row per flashcard (single-user app,
 /// so no separate UserId dimension for now).
 /// </summary>
-public class SpacedRepetitionState
+public class SpacedRepetitionState : IOwnedByUser
 {
     public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid UserId { get; set; }
     public Guid FlashcardId { get; set; }
     public Flashcard? Flashcard { get; set; }
 

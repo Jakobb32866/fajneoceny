@@ -17,7 +17,7 @@ public static class FlashcardEndpoints
 
     public static void MapFlashcardEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/flashcards").WithTags("Flashcards");
+        var group = app.MapGroup("/api/flashcards").WithTags("Flashcards").RequireAuthorization();
 
         app.MapPost("/api/lessons/{lessonId:guid}/quiz", async (
             Guid lessonId,
@@ -80,13 +80,13 @@ public static class FlashcardEndpoints
             await db.SaveChangesAsync();
 
             return Results.Ok(deck.ToDto());
-        });
+        }).RequireAuthorization();
 
         app.MapGet("/api/lessons/{lessonId:guid}/flashcards", async (Guid lessonId, AppDbContext db) =>
         {
             var flashcards = await db.Flashcards.Where(f => f.LessonId == lessonId).ToListAsync();
             return flashcards.Select(f => new FlashcardDto(f.Id, f.Question, f.Answer, f.Difficulty));
-        });
+        }).RequireAuthorization();
 
         group.MapPost("/{id:guid}/review", async (Guid id, ReviewFlashcardRequest request, AppDbContext db, ISpacedRepetitionService sm2) =>
         {

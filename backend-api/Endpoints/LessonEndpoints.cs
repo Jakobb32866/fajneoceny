@@ -26,11 +26,11 @@ public static class LessonEndpoints
                 .Include(l => l.Flashcards)
                 .ToListAsync();
             return lessons.Select(l => new LessonSummary(l.Id, l.Title, l.Order, l.Flashcards.Count));
-        }).WithTags("Lessons");
+        }).WithTags("Lessons").RequireAuthorization();
 
         app.MapPost("/api/subjects/{subjectId:guid}/lessons", async (Guid subjectId, CreateLessonRequest request, AppDbContext db) =>
         {
-            var subject = await db.Subjects.FindAsync(subjectId);
+            var subject = await db.Subjects.FirstOrDefaultAsync(e => e.Id == subjectId);
             if (subject is null) return Results.NotFound();
 
             var maxOrder = await db.Lessons.Where(l => l.SubjectId == subjectId)
@@ -40,7 +40,7 @@ public static class LessonEndpoints
             db.Lessons.Add(lesson);
             await db.SaveChangesAsync();
             return Results.Created($"/api/lessons/{lesson.Id}", lesson);
-        }).WithTags("Lessons");
+        }).WithTags("Lessons").RequireAuthorization();
 
         app.MapGet("/api/lessons/{id:guid}", async (Guid id, AppDbContext db) =>
         {
@@ -58,16 +58,16 @@ public static class LessonEndpoints
                 lesson.Notes.OrderByDescending(n => n.UpdatedAt).FirstOrDefault()?.Content,
                 lesson.Sources.Select(s => new SourceDto(s.Id, s.Title, s.Type, s.Location)).ToList(),
                 lesson.Decks.OrderBy(d => d.CreatedAt).Select(d => d.ToDto()).ToList()));
-        }).WithTags("Lessons");
+        }).WithTags("Lessons").RequireAuthorization();
 
         app.MapDelete("/api/lessons/{id:guid}", async (Guid id, AppDbContext db) =>
         {
-            var lesson = await db.Lessons.FindAsync(id);
+            var lesson = await db.Lessons.FirstOrDefaultAsync(e => e.Id == id);
             if (lesson is null) return Results.NotFound();
             db.Lessons.Remove(lesson);
             await db.SaveChangesAsync();
             return Results.NoContent();
-        }).WithTags("Lessons");
+        }).WithTags("Lessons").RequireAuthorization();
 
         app.MapPut("/api/lessons/{lessonId:guid}/notes", async (Guid lessonId, UpsertNoteRequest request, AppDbContext db) =>
         {
@@ -88,11 +88,11 @@ public static class LessonEndpoints
 
             await db.SaveChangesAsync();
             return Results.Ok(note);
-        }).WithTags("Notes");
+        }).WithTags("Notes").RequireAuthorization();
 
         app.MapPost("/api/lessons/{lessonId:guid}/sources/link", async (Guid lessonId, CreateLinkSourceRequest request, AppDbContext db) =>
         {
-            var lesson = await db.Lessons.FindAsync(lessonId);
+            var lesson = await db.Lessons.FirstOrDefaultAsync(e => e.Id == lessonId);
             if (lesson is null) return Results.NotFound();
 
             var source = new Source
@@ -105,7 +105,7 @@ public static class LessonEndpoints
             db.Sources.Add(source);
             await db.SaveChangesAsync();
             return Results.Created($"/api/sources/{source.Id}", source);
-        }).WithTags("Sources");
+        }).WithTags("Sources").RequireAuthorization();
 
         app.MapPost("/api/lessons/{lessonId:guid}/sources/file", async (
             Guid lessonId,
@@ -114,7 +114,7 @@ public static class LessonEndpoints
             IFileStorageService storage,
             IDocumentTextExtractionService extractor) =>
         {
-            var lesson = await db.Lessons.FindAsync(lessonId);
+            var lesson = await db.Lessons.FirstOrDefaultAsync(e => e.Id == lessonId);
             if (lesson is null) return Results.NotFound();
 
             string savedName;
@@ -141,15 +141,15 @@ public static class LessonEndpoints
             db.Sources.Add(source);
             await db.SaveChangesAsync();
             return Results.Created($"/api/sources/{source.Id}", new SourceDto(source.Id, source.Title, source.Type, source.Location));
-        }).DisableAntiforgery().WithTags("Sources");
+        }).DisableAntiforgery().WithTags("Sources").RequireAuthorization();
 
         app.MapDelete("/api/sources/{id:guid}", async (Guid id, AppDbContext db) =>
         {
-            var source = await db.Sources.FindAsync(id);
+            var source = await db.Sources.FirstOrDefaultAsync(e => e.Id == id);
             if (source is null) return Results.NotFound();
             db.Sources.Remove(source);
             await db.SaveChangesAsync();
             return Results.NoContent();
-        }).WithTags("Sources");
+        }).WithTags("Sources").RequireAuthorization();
     }
 }
