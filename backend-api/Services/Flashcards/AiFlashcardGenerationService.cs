@@ -20,6 +20,11 @@ public class AiFlashcardGenerationService(
 {
     private readonly AiOptions _options = options.Value;
 
+    // Local models (e.g. qwen/Bielik on Ollama) don't reliably honour the exact
+    // count — they often return a few too few. So we generate, then re-request
+    // only the shortfall, deduping by question, up to this many rounds.
+    private const int MaxGenerationRounds = 3;
+
     public async Task<List<GeneratedFlashcard>> GenerateAsync(
         string sourceText, int count, Difficulty difficulty, CancellationToken ct = default)
     {
@@ -28,19 +33,65 @@ public class AiFlashcardGenerationService(
             return await fallback.GenerateAsync(sourceText, count, difficulty, ct);
         }
 
-        try
+        var collected = new List<GeneratedFlashcard>();
+        var seenQuestions = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        for (var round = 0; round < MaxGenerationRounds && collected.Count < count; round++)
         {
-            return await CallAiAsync(sourceText, count, difficulty, ct);
+            var remaining = count - collected.Count;
+            List<GeneratedFlashcard> batch;
+            try
+            {
+                // On top-up rounds, tell the model which questions it already
+                // produced so it generates new ones instead of near-duplicates.
+                var avoid = collected.Select(c => c.Question).ToList();
+                batch = await CallAiAsync(sourceText, remaining, difficulty, avoid, ct);
+            }
+            catch (Exception ex)
+            {
+                // First round failed outright: no AI cards at all → heuristic.
+                // A later round failing just ends the top-up; keep what we have.
+                logger.LogWarning(ex, "AI flashcard generation round {Round} failed", round + 1);
+                if (collected.Count == 0)
+                    return await fallback.GenerateAsync(sourceText, count, difficulty, ct);
+                break;
+            }
+
+            AddUnique(collected, seenQuestions, batch, count);
         }
-        catch (Exception ex)
+
+        // The model under-delivered across all rounds; top up with heuristic
+        // cards so the student still gets the number they asked for.
+        if (collected.Count < count)
         {
-            logger.LogWarning(ex, "AI flashcard generation failed, falling back to heuristic generator");
-            return await fallback.GenerateAsync(sourceText, count, difficulty, ct);
+            try
+            {
+                var filler = await fallback.GenerateAsync(sourceText, count - collected.Count, difficulty, ct);
+                AddUnique(collected, seenQuestions, filler, count);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Heuristic top-up failed; returning {Count} AI cards", collected.Count);
+            }
+        }
+
+        return collected;
+    }
+
+    /// <summary>Appends cards with a not-yet-seen question until <paramref name="max"/> is reached.</summary>
+    private static void AddUnique(
+        List<GeneratedFlashcard> collected, HashSet<string> seen, IEnumerable<GeneratedFlashcard> incoming, int max)
+    {
+        foreach (var card in incoming)
+        {
+            if (collected.Count >= max) break;
+            if (string.IsNullOrWhiteSpace(card.Question)) continue;
+            if (seen.Add(card.Question.Trim())) collected.Add(card);
         }
     }
 
     private async Task<List<GeneratedFlashcard>> CallAiAsync(
-        string sourceText, int count, Difficulty difficulty, CancellationToken ct)
+        string sourceText, int count, Difficulty difficulty, IReadOnlyCollection<string> avoidQuestions, CancellationToken ct)
     {
         var difficultyLabel = difficulty switch
         {
@@ -50,12 +101,18 @@ public class AiFlashcardGenerationService(
             _ => "średnim",
         };
 
+        var avoidClause = avoidQuestions.Count == 0
+            ? string.Empty
+            : "Nie twórz pytań powtarzających lub podobnych do poniższych (utwórz zupełnie NOWE):\n" +
+              string.Join("\n", avoidQuestions.Select(q => $"- {q}")) + "\n";
+
         var prompt =
             $"Na podstawie poniższych notatek/materiałów z zajęć utwórz dokładnie {count} fiszek\n" +
             $"(pytanie i odpowiedź) na poziomie trudności {difficultyLabel}.\n" +
             "Odpowiedz WYŁĄCZNIE poprawnym JSON-em: obiektem z polem \"flashcards\" " +
             "będącym tablicą obiektów, np. " +
             "{\"flashcards\": [{\"question\": \"...\", \"answer\": \"...\"}]}.\n" +
+            avoidClause +
             "Materiał źródłowy:\n---\n" +
             $"{Truncate(sourceText, 12000)}\n---";
 

@@ -36,6 +36,13 @@ builder.Services.AddHttpClient<AiFlashcardGenerationService>(client =>
     client.Timeout = TimeSpan.FromMinutes(5));
 builder.Services.AddSingleton<IFlashcardGenerationService>(sp => sp.GetRequiredService<AiFlashcardGenerationService>());
 
+// Grading-scheme extraction: LLM parse of the syllabus, with the offline regex
+// heuristic as the fallback (same wiring as flashcard generation).
+builder.Services.AddSingleton<HeuristicGradingSchemeExtractor>();
+builder.Services.AddHttpClient<AiGradingSchemeExtractor>(client =>
+    client.Timeout = TimeSpan.FromMinutes(5));
+builder.Services.AddSingleton<IGradingSchemeExtractor>(sp => sp.GetRequiredService<AiGradingSchemeExtractor>());
+
 builder.Services.AddSingleton<ITextToSpeechService, PiperTextToSpeechService>();
 builder.Services.AddSingleton<IFlashcardAudioExportService, FlashcardAudioExportService>();
 

@@ -24,9 +24,10 @@ public static class SubjectEndpoints
     /// the subject's draft components with the result, persists, and returns the
     /// upload result. Shared by the file and pasted-text endpoints.
     /// </summary>
-    private static async Task<SyllabusUploadResult> ApplySyllabusTextAsync(Subject subject, string rawText, AppDbContext db)
+    private static async Task<SyllabusUploadResult> ApplySyllabusTextAsync(
+        Subject subject, string rawText, AppDbContext db, IGradingSchemeExtractor extractor)
     {
-        var draft = GradingSchemeExtractor.Extract(rawText);
+        var draft = await extractor.ExtractAsync(rawText);
 
         var scheme = await db.GradingSchemes.FirstOrDefaultAsync(g => g.SubjectId == subject.Id);
         if (scheme is null)
@@ -108,7 +109,8 @@ public static class SubjectEndpoints
             IFormFile file,
             AppDbContext db,
             IFileStorageService storage,
-            IDocumentTextExtractionService extractor) =>
+            IDocumentTextExtractionService extractor,
+            IGradingSchemeExtractor schemeExtractor) =>
         {
             var subject = await db.Subjects.FirstOrDefaultAsync(s => s.Id == id);
             if (subject is null) return Results.NotFound();
@@ -125,13 +127,14 @@ public static class SubjectEndpoints
                 subject.SyllabusRawText = extractor.ExtractText(textStream, file.FileName);
             }
 
-            var result = await ApplySyllabusTextAsync(subject, subject.SyllabusRawText ?? string.Empty, db);
+            var result = await ApplySyllabusTextAsync(subject, subject.SyllabusRawText ?? string.Empty, db, schemeExtractor);
             return Results.Ok(result);
         }).DisableAntiforgery();
 
         // Same outcome as the file upload, but from raw text the student pasted
         // in (e.g. copied from an email or a course page) instead of a document.
-        group.MapPost("/{id:guid}/syllabus/text", async (Guid id, SyllabusTextRequest request, AppDbContext db) =>
+        group.MapPost("/{id:guid}/syllabus/text", async (
+            Guid id, SyllabusTextRequest request, AppDbContext db, IGradingSchemeExtractor schemeExtractor) =>
         {
             var subject = await db.Subjects.FirstOrDefaultAsync(s => s.Id == id);
             if (subject is null) return Results.NotFound();
@@ -141,7 +144,7 @@ public static class SubjectEndpoints
             subject.SyllabusFileName = null;
             subject.SyllabusRawText = request.Text;
 
-            var result = await ApplySyllabusTextAsync(subject, request.Text, db);
+            var result = await ApplySyllabusTextAsync(subject, request.Text, db, schemeExtractor);
             return Results.Ok(result);
         });
 

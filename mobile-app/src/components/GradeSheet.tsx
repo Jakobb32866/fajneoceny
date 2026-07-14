@@ -25,6 +25,11 @@ function formatPercent(value: number | null): string {
   return value === null ? '—' : `${value.toFixed(1)}%`;
 }
 
+/** Parse a number allowing the Polish decimal comma (e.g. "4,5" → 4.5). */
+function parseNumber(text: string): number {
+  return Number(text.replace(',', '.').trim());
+}
+
 export function GradeSheet({ subjectId }: { subjectId: string }) {
   const [grades, setGrades] = useState<SubjectGradesResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -145,11 +150,32 @@ function AddComponentModal({
 }: {
   visible: boolean;
   onClose: () => void;
-  onSubmit: (name: string, category: GradeCategory, weight: number) => void;
+  onSubmit: (name: string, category: GradeCategory, weight: number) => Promise<void>;
 }) {
   const [name, setName] = useState('');
   const [category, setCategory] = useState<GradeCategory>('Homework');
   const [weight, setWeight] = useState('');
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const submit = async () => {
+    const w = parseNumber(weight);
+    if (!name.trim() || Number.isNaN(w) || w <= 0) {
+      setError('Podaj nazwę i wagę (liczbę większą od 0).');
+      return;
+    }
+    setSubmitting(true);
+    setError('');
+    try {
+      await onSubmit(name.trim(), category, w);
+      setName('');
+      setWeight('');
+    } catch {
+      setError('Nie udało się dodać składnika. Sprawdź połączenie i spróbuj ponownie.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
@@ -175,11 +201,13 @@ function AddComponentModal({
             value={weight}
             onChangeText={setWeight}
           />
+          {error ? <Text style={styles.errorText}>{error}</Text> : null}
           <TouchableOpacity
-            style={styles.submitButton}
-            onPress={() => name.trim() && weight && onSubmit(name.trim(), category, Number(weight))}
+            style={[styles.submitButton, submitting && styles.submitButtonDisabled]}
+            disabled={submitting}
+            onPress={submit}
           >
-            <Text style={styles.submitText}>Dodaj</Text>
+            <Text style={styles.submitText}>{submitting ? 'Dodawanie…' : 'Dodaj'}</Text>
           </TouchableOpacity>
         </Pressable>
       </Pressable>
@@ -194,11 +222,34 @@ function AddEntryModal({
 }: {
   visible: boolean;
   onClose: () => void;
-  onSubmit: (name: string, score: number, maxScore: number) => void;
+  onSubmit: (name: string, score: number, maxScore: number) => Promise<void>;
 }) {
   const [name, setName] = useState('');
   const [score, setScore] = useState('');
   const [maxScore, setMaxScore] = useState('100');
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const submit = async () => {
+    const s = parseNumber(score);
+    const m = parseNumber(maxScore);
+    if (!name.trim() || Number.isNaN(s) || Number.isNaN(m) || m <= 0) {
+      setError('Podaj nazwę, wynik i maksymalny wynik (liczbę większą od 0).');
+      return;
+    }
+    setSubmitting(true);
+    setError('');
+    try {
+      await onSubmit(name.trim(), s, m);
+      setName('');
+      setScore('');
+      setMaxScore('100');
+    } catch {
+      setError('Nie udało się dodać oceny. Sprawdź połączenie i spróbuj ponownie.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
@@ -214,11 +265,13 @@ function AddEntryModal({
             value={maxScore}
             onChangeText={setMaxScore}
           />
+          {error ? <Text style={styles.errorText}>{error}</Text> : null}
           <TouchableOpacity
-            style={styles.submitButton}
-            onPress={() => name.trim() && score && onSubmit(name.trim(), Number(score), Number(maxScore))}
+            style={[styles.submitButton, submitting && styles.submitButtonDisabled]}
+            disabled={submitting}
+            onPress={submit}
           >
-            <Text style={styles.submitText}>Dodaj</Text>
+            <Text style={styles.submitText}>{submitting ? 'Dodawanie…' : 'Dodaj'}</Text>
           </TouchableOpacity>
         </Pressable>
       </Pressable>
@@ -256,5 +309,7 @@ const styles = StyleSheet.create({
   chipText: { fontSize: 12, color: '#333' },
   chipTextSelected: { fontSize: 12, color: 'white' },
   submitButton: { backgroundColor: '#111827', borderRadius: 10, paddingVertical: 12, alignItems: 'center', marginTop: 4 },
+  submitButtonDisabled: { backgroundColor: '#9ca3af' },
   submitText: { color: 'white', fontWeight: '700' },
+  errorText: { color: '#dc2626', fontSize: 13 },
 });
