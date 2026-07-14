@@ -3,15 +3,15 @@
   "configurations": [
     {
       "name": "backend-api",
-      "runtimeExecutable": "dotnet",
+      "runtimeExecutable": "/usr/local/share/dotnet/dotnet",
       "runtimeArgs": ["run", "--urls", "http://localhost:8080"],
       "cwd": "backend-api",
       "port": 8080
     },
     {
       "name": "mobile-app-web",
-      "runtimeExecutable": "npx",
-      "runtimeArgs": ["expo", "start", "--web", "--port", "8090"],
+      "runtimeExecutable": "/Users/borysczajkowski/.nvm/versions/node/v24.18.0/bin/node",
+      "runtimeArgs": ["node_modules/.bin/expo", "start", "--web", "--port", "8090"],
       "cwd": "mobile-app",
       "port": 8090
     },

@@ -26,3 +26,12 @@ function resolveApiBaseUrl(): string {
 }
 
 export const API_BASE_URL = resolveApiBaseUrl();
+
+// Google OAuth client ids for expo-auth-session. Leave placeholders here;
+// real values are per-deployment (Google Cloud Console) and should be filled
+// in before shipping. An empty string disables the Google sign-in button.
+export const GOOGLE_OAUTH_CLIENT_IDS = {
+  web: '',
+  ios: '',
+  android: '',
+};

@@ -1,10 +1,16 @@
+using System.Text;
+using BackendApi.Auth;
 using BackendApi.Data;
+using BackendApi.Domain;
 using BackendApi.Endpoints;
 using BackendApi.Services.Flashcards;
 using BackendApi.Services.Grading;
 using BackendApi.Services.Storage;
 using BackendApi.Services.Tts;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -21,6 +27,14 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 builder.Services.Configure<StorageOptions>(builder.Configuration.GetSection("Storage"));
 builder.Services.Configure<AiOptions>(builder.Configuration.GetSection("Ai"));
 builder.Services.Configure<TtsOptions>(builder.Configuration.GetSection("Tts"));
+builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection("Jwt"));
+builder.Services.Configure<GoogleOptions>(builder.Configuration.GetSection("Google"));
+
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<ICurrentUser, CurrentUser>();
+builder.Services.AddSingleton<JwtTokenService>();
+builder.Services.AddSingleton<GoogleTokenVerifier>();
+builder.Services.AddSingleton<PasswordHasher<User>>();
 
 builder.Services.AddSingleton<IFileStorageService, FileStorageService>();
 builder.Services.AddSingleton<IGradeCalculationService, GradeCalculationService>();
@@ -51,6 +65,23 @@ builder.Services.AddCors(options =>
     options.AddDefaultPolicy(policy => policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod());
 });
 
+var jwtSection = builder.Configuration.GetSection("Jwt");
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuer = jwtSection["Issuer"],
+            ValidateAudience = true,
+            ValidAudience = jwtSection["Audience"],
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSection["Key"]!)),
+            ValidateLifetime = true,
+        };
+    });
+builder.Services.AddAuthorization();
+
 var app = builder.Build();
 
 using (var scope = app.Services.CreateScope())
@@ -74,6 +105,10 @@ if (app.Environment.IsDevelopment())
     app.UseHttpsRedirection();
 }
 
+app.UseAuthentication();
+app.UseAuthorization();
+
+app.MapAuthEndpoints();
 app.MapSubjectEndpoints();
 app.MapLessonEndpoints();
 app.MapDeckEndpoints();

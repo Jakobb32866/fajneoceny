@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>fajneoceny.pl — Fiszki audio i powtórki dla pracujących studentów</title>
+<meta name="description" content="Twórz notatki, zamieniaj je w fiszki i słuchaj codziennych powtórek w drodze do pracy. Algorytm w stylu Anki pilnuje, co musisz powtórzyć. Miesiąc za darmo, bez karty.">
+<link rel="icon" href="./assets/brand/favicon.svg">
+
+<!-- Fonts: preconnect + direct link (skips the CSS @import waterfall) -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap">
+
+<!-- Design tokens (local, parallel fetch — no @import chain) -->
+<link rel="stylesheet" href="./tokens/colors.css">
+<link rel="stylesheet" href="./tokens/typography.css">
+<link rel="stylesheet" href="./tokens/spacing.css">
+<link rel="stylesheet" href="./tokens/radius.css">
+<link rel="stylesheet" href="./tokens/shadows.css">
+<link rel="stylesheet" href="./tokens/motion.css">
+<link rel="stylesheet" href="./tokens/base.css">
+<link rel="stylesheet" href="landing.css">
+
+<!-- Scroll reveals: zero-dependency IntersectionObserver + CSS, deferred -->
+<script defer src="landing.js"></script>
+<script>
+/* Reveal-hiding only when JS runs and motion is allowed — no-JS users see full content */
+if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+  document.documentElement.classList.add('js');
+}
+</script>
+</head>
+<body>
+
+<!-- SVG icon sprite (inline = zero requests, ~3kB total; replaces the 300kB Lucide CDN script) -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></symbol>
+    <symbol id="i-shuffle" viewBox="0 0 24 24"><path d="M2 18h1.4c1.3 0 2.5-.6 3.3-1.7l6.1-8.6c.8-1.1 2-1.7 3.3-1.7H22"/><path d="m18 2 4 4-4 4"/><path d="M2 6h1.9c1.5 0 2.9.9 3.6 2.2"/><path d="M22 18h-5.9c-1.3 0-2.6-.7-3.3-1.8l-.5-.8"/><path d="m18 14 4 4-4 4"/></symbol>
+    <symbol id="i-brain" viewBox="0 0 24 24"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2Z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2Z"/></symbol>
+    <symbol id="i-calendar-x" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/><path d="m14 14-4 4"/><path d="m10 14 4 4"/></symbol>
+    <symbol id="i-file-pen" viewBox="0 0 24 24"><path d="M4 13.5V4a2 2 0 0 1 2-2h8.5L20 7.5V20a2 2 0 0 1-2 2h-5.5"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10.42 12.61a2.1 2.1 0 1 1 2.97 2.97L7.95 21 4 22l.99-3.95Z"/></symbol>
+    <symbol id="i-repeat" viewBox="0 0 24 24"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></symbol>
+    <symbol id="i-headphones" viewBox="0 0 24 24"><path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3"/></symbol>
+    <symbol id="i-file-text" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></symbol>
+    <symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
+    <symbol id="i-flame" viewBox="0 0 24 24"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></symbol>
+    <symbol id="i-gift" viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13"/><path d="M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7"/><path d="M7.5 8a2.5 2.5 0 0 1 0-5A4.8 8 0 0 1 12 8a4.8 8 0 0 1 4.5-5 2.5 2.5 0 0 1 0 5"/></symbol>
+  </defs>
+</svg>
+
+<!-- ============ HEADER ============ -->
+<header class="site-header">
+  <div class="wrap header-inner">
+    <a href="index.html" class="logo-link" aria-label="fajneoceny.pl — strona główna">
+      <img src="./assets/brand/lockup-horizontal.svg" alt="fajneoceny.pl" width="180" height="36" class="logo">
+    </a>
+    <nav class="main-nav" aria-label="Główna nawigacja">
+      <a href="#jak-to-dziala">Funkcje</a>
+      <a href="#cennik">Cennik</a>
+    </nav>
+    <a href="#wczesny-dostep" class="btn btn-primary btn-sm">Przetestuj jako pierwszy</a>
+  </div>
+</header>
+
+<main>
+
+<!-- ============ 1. HERO ============ -->
+<section class="hero section-inverse">
+  <div class="wrap hero-grid">
+    <div class="hero-copy">
+      <span class="eyebrow eyebrow-accent" data-hero>Dla pracujących studentów</span>
+      <h1 class="display" data-hero>Masz pracę, studia i&nbsp;ambicję. Nie masz tylko czasu.</h1>
+      <p class="lead" data-hero>
+        Fajneoceny.pl to miejsce, w którym tworzysz i porządkujesz
+        notatki, automatycznie zamieniasz je w inteligentne fiszki i quizy, oraz monitorujesz swoje oceny.
+        Już nigdy nie zarwiesz nocy przed egzaminem, ani nie zapomnisz o ważnym projekcie.
+      </p>
+      <div class="cta-row" data-hero>
+        <a href="#wczesny-dostep" class="btn btn-accent btn-lg">
+          Przetestuj jako pierwszy
+          <svg class="icon" aria-hidden="true"><use href="#i-arrow-right"/></svg>
+        </a>
+        <a href="#jak-to-dziala" class="btn btn-ghost-inverse btn-lg">Zobacz jak to działa</a>
+      </div>
+    </div>
+
+    <div class="hero-visual" data-hero>
+      <div class="audio-card" id="hero-audio-card">
+        <div class="audio-card-top">
+          <button type="button" class="play-btn" aria-label="Odtwórz powtórkę audio">
+            <svg class="icon" aria-hidden="true"><use href="#i-play"/></svg>
+          </button>
+          <div>
+            <p class="audio-title">Powtórka audio — dzisiaj</p>
+            <p class="audio-meta">18 fiszek · 6 min</p>
+          </div>
+          <span class="streak-pill">
+            <svg class="icon icon-sm" aria-hidden="true"><use href="#i-flame"/></svg>
+            <span class="mono">12</span>
+          </span>
+        </div>
+        <div class="wave" aria-hidden="true"></div>
+        <div class="audio-card-bottom">
+          <span class="mono progress-label">86%</span>
+          <span>Rachunkowość — opanowane</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 2. PROBLEM ============ -->
+<section class="section" id="problem">
+  <div class="wrap">
+    <div class="section-head" data-reveal>
+      <span class="eyebrow">Znasz to?</span>
+      <h2>Chcesz się uczyć, ale nie masz kiedy, a później i&nbsp;tak nic nie zostaje w&nbsp;głowie na dłużej.</h2>
+    </div>
+    <div class="pain-grid">
+      <div class="pain-card" data-reveal>
+        <span class="pain-icon"><svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg></span>
+        <p>Wracasz z pracy późnym wieczorem. Otwierasz notatki, ale zakres materiału Cię przytłacza. </p>
+      </div>
+      <div class="pain-card" data-reveal>
+        <span class="pain-icon"><svg class="icon" aria-hidden="true"><use href="#i-shuffle"/></svg></span>
+        <p>Uczysz się wszystkiego w losowej kolejności, bez ustalonych priorytetów, bo nie wiesz, co naprawdę trzeba powtórzyć.</p>
+      </div>
+      <div class="pain-card" data-reveal>
+        <span class="pain-icon"><svg class="icon" aria-hidden="true"><use href="#i-brain"/></svg></span>
+        <p>Uczysz się w noc przed egzaminem, a potem i tak nie pamiętasz połowy.</p>
+      </div>
+      <div class="pain-card" data-reveal>
+        <span class="pain-icon"><svg class="icon" aria-hidden="true"><use href="#i-calendar-x"/></svg></span>
+        <p>Sesja coraz bliżej, a Ty nie wiesz z jakich przedmiotów jesteś zagrożony.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 3. SOLUTION ============ -->
+<section class="section section-inverse" id="jak-to-dziala">
+  <div class="wrap">
+    <div class="section-head" data-reveal>
+      <span class="eyebrow eyebrow-accent">Jak to działa</span>
+      <h2>Trzy kroki. Zero zarwanych nocy.</h2>
+    </div>
+
+    <div class="steps-grid">
+      <!-- Step 1 -->
+      <article class="step" data-reveal>
+        <div class="step-head">
+          <span class="step-num mono">1</span>
+          <span class="step-icon"><svg class="icon" aria-hidden="true"><use href="#i-file-pen"/></svg></span>
+        </div>
+        <h3>Twórz i porządkuj notatki</h3>
+        <p>Pisz notatki u nas albo wrzuć gotowe — własne albo od kogoś z roku. W kilka sekund zamieniamy je w fiszki.</p>
+        <div class="mini-card mini-note">
+          <p class="mini-label">Twoja notatka</p>
+          <div class="mini-lines">
+            <div class="skeleton" style="width:90%"></div>
+            <div class="skeleton" style="width:72%"></div>
+            <div class="skeleton" style="width:83%"></div>
+          </div>
+          <div class="mini-gen">
+            <svg class="icon icon-sm" aria-hidden="true"><use href="#i-repeat"/></svg>
+            <span>12 fiszek wygenerowanych</span>
+          </div>
+        </div>
+      </article>
+
+      <!-- Step 2 -->
+      <article class="step" data-reveal>
+        <div class="step-head">
+          <span class="step-num mono">2</span>
+          <span class="step-icon"><svg class="icon" aria-hidden="true"><use href="#i-repeat"/></svg></span>
+        </div>
+        <h3>Powtarzasz tylko to, co zaraz zapomnisz</h3>
+        <p>
+          <strong>Powtórki rozłożone w czasie</strong> (spaced repetition) to metoda, w której przypominasz
+          sobie materiał dokładnie w chwili, gdy masz go zaraz zapomnieć. Zamiast czytać wszystko po raz
+          piąty, powtarzasz tylko te fiszki, które zaczynają Ci się zacierać.
+        </p>
+        <p>
+          Dla Ciebie znaczy to jedno: <strong>mniej czasu poświęconego na naukę, więcej w głowie.</strong> Nasz algorytm
+          w stylu Anki codziennie układa Twoją sesję — decyduje, co i kiedy powtórzyć.
+        </p>
+        <div class="mini-card mini-rep">
+          <div class="rep-row tone-green"><span>Znam dobrze</span><span class="mono">za 4 dni</span></div>
+          <div class="rep-row tone-amber"><span>Przypomniałem sobie, ale z trudem</span><span class="mono">za 1 dzień</span></div>
+          <div class="rep-row tone-red"><span>Nie pamiętam</span><span class="mono">dzisiaj</span></div>
+        </div>
+      </article>
+
+      <!-- Step 3 -->
+      <article class="step" data-reveal>
+        <div class="step-head">
+          <span class="step-num mono">3</span>
+          <span class="step-icon"><svg class="icon" aria-hidden="true"><use href="#i-headphones"/></svg></span>
+        </div>
+        <h3>Ucz się jak chcesz — audio albo klasycznie</h3>
+        <p>
+          Codzienną sesję możesz <strong>odsłuchać</strong> w drodze do pracy czy na siłowni albo <strong>przeklikać</strong>
+          klasyczne fiszki przy biurku. Ten sam materiał, Ty wybierasz formę.
+        </p>
+        <div class="mini-card mini-modes show-classic">
+          <div class="mode-toggle" aria-hidden="true">
+            <span class="mode" data-mode="audio">
+              <svg class="icon icon-sm"><use href="#i-headphones"/></svg> Audio
+            </span>
+            <span class="mode mode-active" data-mode="classic">
+              <svg class="icon icon-sm"><use href="#i-file-text"/></svg> Klasyczne
+            </span>
+          </div>
+          <div class="mode-body">
+            <div class="mini-wave" aria-hidden="true"></div>
+            <p class="mini-flash-q">Co to jest amortyzacja?</p>
+          </div>
+        </div>
+      </article>
+    </div>
+
+    <!-- Supporting row: grade tracking -->
+    <div class="support-row" data-reveal>
+      <div class="support-copy">
+        <span class="step-icon"><svg class="icon" aria-hidden="true"><use href="#i-file-text"/></svg></span>
+        <h3>Zawsze wiesz, na czym stoisz</h3>
+        <p>
+          Wgraj PDF z zasadami zaliczenia, a my policzymy resztę. Zobaczysz dokładnie, ile punktów brakuje
+          Ci do zaliczenia i do wyższej oceny — a jeśli zaczniesz balansować na granicy, dostaniesz
+          powiadomienie, zanim będzie za późno.
+        </p>
+      </div>
+      <div class="support-visual">
+        <div class="pdf-card">
+          <div class="pdf-head">
+            <span class="pdf-file-icon"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-file-text"/></svg></span>
+            <div>
+              <p class="pdf-name">Zasady_zaliczenia_2026.pdf</p>
+              <p class="pdf-meta">Wgrano · analiza zakończona</p>
+            </div>
+          </div>
+          <div class="pdf-row" data-count="20" data-pass="1"><span>Kolokwium 1</span><span class="mono pct">20 pkt</span><span class="badge badge-success">Zaliczone</span></div>
+          <div class="pdf-row" data-count="20" data-pass="1"><span>Kolokwium 2</span><span class="mono pct">20 pkt</span><span class="badge badge-success">Zaliczone</span></div>
+          <div class="pdf-row" data-count="25" data-pass="0"><span>Projekt zespołowy</span><span class="mono pct">25 pkt</span><span class="badge">Do zrobienia</span></div>
+          <div class="pdf-row" data-count="35" data-pass="0"><span>Egzamin końcowy</span><span class="mono pct">35 pkt</span><span class="badge">Do zrobienia</span></div>
+          <div class="pdf-alert">
+            <svg class="icon icon-sm" aria-hidden="true"><use href="#i-bell"/></svg>
+            <span>Do zaliczenia brakuje Ci <strong class="mono">11 pkt</strong> — do oceny 4.0: <strong class="mono">19 pkt</strong></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 4. PROOF ============ -->
+<section class="section" id="opinie">
+  <div class="wrap">
+    <div class="section-head" data-reveal>
+      <span class="eyebrow">Mówią studenci</span>
+      <h2>Zbudowane dla ludzi, którzy nie mają czasu.</h2>
+    </div>
+    <div class="proof-grid">
+      <figure class="quote-card" data-reveal>
+        <blockquote>
+          Pracuję na pół etatu i dojeżdżam na uczelnię 50 minut w jedną stronę. Kiedyś ten czas po prostu
+          przepadał. Teraz odsłuchuję powtórkę w tramwaju i cały materiał z prawa cywilnego mam przerobiony,
+          zanim w ogóle usiądę do biurka. Pierwszy raz zdałem kolokwium bez zarywania nocy.
+        </blockquote>
+        <figcaption><strong>Michał</strong> · prawo, UŁ</figcaption>
+      </figure>
+      <figure class="quote-card" data-reveal>
+        <blockquote>
+          Wieczorem po pracy naprawdę nie mam siły otwierać notatek — oczy same się zamykają. Ustawiłam
+          sesję audio na rano i słucham jej przy kawie i w autobusie. Brzmi banalnie, ale to jedyny sposób,
+          w jaki cokolwiek mi zostaje w głowie. Do tego widzę, które fiszki mi umykają, więc nie tracę
+          czasu na to, co już umiem.
+        </blockquote>
+        <figcaption><strong>Ola</strong> · zarządzanie, SGH</figcaption>
+      </figure>
+      <figure class="quote-card" data-reveal>
+        <blockquote>
+          Zawsze uczyłem się wszystkiego po kolei i tak wchodziłem na egzamin z uczuciem, że nic nie umiem.
+          Najbardziej pomogło mi to, że po wgraniu zasad zaliczenia widzę dokładnie, ile punktów brakuje mi
+          do zdania. Przestałem panikować i uczyć się na zapas — robię tyle, ile trzeba, i mam wreszcie
+          czas dla siebie.
+        </blockquote>
+        <figcaption><strong>Kuba</strong> · informatyka, PW</figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 5. PRICING ============ -->
+<section class="section section-tint" id="cennik">
+  <div class="wrap">
+    <div class="section-head" data-reveal>
+      <h2>Miesiąc za darmo. Potem decydujesz.</h2>
+      <p class="section-sub">
+        Okres próbny zawiera <strong>wszystko z planu Pro</strong> — audio, automatyczne fiszki
+        i śledzenie ocen. Bez wyjątków.
+      </p>
+    </div>
+
+    <div class="plans-grid">
+      <article class="plan-card" data-reveal>
+        <h3>Standard</h3>
+        <p class="plan-price"><span class="mono">30 zł</span><span class="plan-per">/mies.</span></p>
+        <ul class="plan-features">
+          <li class="on"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-check"/></svg> Fiszki i powtórki (algorytm Anki)</li>
+          <li class="on"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-check"/></svg> Śledzenie ocen z PDF</li>
+          <li class="off"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-x"/></svg> Automatyczne fiszki z notatek</li>
+          <li class="off"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-x"/></svg> Codzienne sesje audio</li>
+        </ul>
+      </article>
+
+      <article class="plan-card plan-featured" data-reveal>
+        <span class="badge badge-brand plan-badge">Wszystko z okresu próbnego</span>
+        <h3>Pro</h3>
+        <p class="plan-price"><span class="mono">50 zł</span><span class="plan-per">/mies.</span></p>
+        <ul class="plan-features">
+          <li class="on"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-check"/></svg> Fiszki i powtórki (algorytm Anki)</li>
+          <li class="on"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-check"/></svg> Śledzenie ocen z PDF</li>
+          <li class="on"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-check"/></svg> Automatyczne fiszki z notatek</li>
+          <li class="on"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-check"/></svg> Codzienne sesje audio</li>
+        </ul>
+      </article>
+    </div>
+
+    <div class="pricing-cta" data-reveal>
+      <a href="#wczesny-dostep" class="btn btn-primary btn-lg">
+        Przetestuj jako pierwszy
+        <svg class="icon" aria-hidden="true"><use href="#i-arrow-right"/></svg>
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 6. FAQ ============ -->
+<section class="section section-faq" id="faq">
+  <div class="wrap wrap-narrow">
+    <div class="section-head" data-reveal>
+      <h2>Zanim zaczniesz</h2>
+    </div>
+    <div class="faq-list" data-reveal>
+      <details class="faq-item">
+        <summary>Co się stanie po miesiącu?<svg class="icon icon-sm faq-plus" aria-hidden="true"><use href="#i-plus"/></svg></summary>
+        <p>Nic automatycznie. Sam wybierasz plan albo kończysz. Nie pobieramy nic bez Twojej decyzji.</p>
+      </details>
+      <details class="faq-item">
+        <summary>Muszę podawać kartę?<svg class="icon icon-sm faq-plus" aria-hidden="true"><use href="#i-plus"/></svg></summary>
+        <p>Nie. Okres próbny startuje bez karty.</p>
+      </details>
+      <details class="faq-item">
+        <summary>Zadziała z moimi notatkami?<svg class="icon icon-sm faq-plus" aria-hidden="true"><use href="#i-plus"/></svg></summary>
+        <p>Tak — PDF, zdjęcia, zwykły tekst. Możesz też pisać notatki bezpośrednio u nas.</p>
+      </details>
+      <details class="faq-item">
+        <summary>Mogę zrezygnować w każdej chwili?<svg class="icon icon-sm faq-plus" aria-hidden="true"><use href="#i-plus"/></svg></summary>
+        <p>Tak, jednym kliknięciem. Bez maili, bez rozmów.</p>
+      </details>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 7. FINAL CTA / EARLY ACCESS ============ -->
+<section class="section section-inverse section-final" id="wczesny-dostep">
+  <div class="wrap wrap-narrow final-inner">
+    <h2 class="display-sm" data-reveal>Każdy wieczór nauki po staremu to godziny, których nie odzyskasz.</h2>
+    <p class="lead" data-reveal>
+      Rekrutujemy pierwszych użytkowników do wczesnego dostępu — liczba miejsc jest ograniczona.
+      Oficjalna premiera fajneoceny.pl odbędzie się w październiku 2026, a zapisani jako pierwsi
+      będą na bieżąco dostawać informacje o postępach prac nad produktem.
+    </p>
+
+    <form
+      name="wczesny-dostep"
+      method="POST"
+      data-netlify="true"
+      netlify-honeypot="bot-field"
+      class="early-access-form"
+      data-reveal
+    >
+      <input type="hidden" name="form-name" value="wczesny-dostep">
+      <p class="hp-field" aria-hidden="true">
+        <label>Nie wypełniaj tego pola: <input name="bot-field" tabindex="-1" autocomplete="off"></label>
+      </p>
+      <div class="early-access-row">
+        <label for="ea-email" class="visually-hidden">Adres e-mail</label>
+        <input
+          type="email"
+          id="ea-email"
+          name="email"
+          class="early-access-input"
+          placeholder="zdolny@student.pl"
+          autocomplete="email"
+          required
+        >
+        <button type="submit" class="btn btn-accent btn-lg">
+          Zapisz się
+          <svg class="icon" aria-hidden="true"><use href="#i-arrow-right"/></svg>
+        </button>
+      </div>
+    </form>
+
+    <div class="early-access-perk" data-reveal>
+      <span class="early-access-perk-icon">
+        <svg class="icon" aria-hidden="true"><use href="#i-gift"/></svg>
+      </span>
+      <span>Zapisując się otrzymujesz 6 miesięcy darmowego dostępu do wersji Pro</span>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<!-- ============ FOOTER ============ -->
+<footer class="site-footer">
+  <div class="wrap">
+    <div class="footer-grid">
+      <div class="footer-brand">
+        <img src="./assets/brand/lockup-horizontal.svg" alt="fajneoceny.pl" width="160" height="32" class="logo logo-invert" loading="lazy">
+      </div>
+      <nav class="footer-col" aria-label="Produkt">
+        <p class="footer-head">Produkt</p>
+        <a href="#jak-to-dziala">Funkcje</a>
+        <a href="#cennik">Cennik</a>
+      </nav>
+      <nav class="footer-col" aria-label="Firma">
+        <p class="footer-head">Firma</p>
+        <a href="#">O nas</a>
+        <a href="#">Kontakt</a>
+        <a href="#">Regulamin</a>
+      </nav>
+    </div>
+    <p class="footer-copy">© 2026 fajneoceny.pl</p>
+  </div>
+</footer>
+
+</body>
+</html>

@@ -8,9 +8,10 @@ public enum GradeCategory
     Other,
 }
 
-public class GradingScheme
+public class GradingScheme : IOwnedByUser
 {
     public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid UserId { get; set; }
     public Guid SubjectId { get; set; }
     public Subject? Subject { get; set; }
 
@@ -22,9 +23,10 @@ public class GradingScheme
 /// uploaded syllabus (IsAdHoc = false) or added later by the student
 /// (IsAdHoc = true) for a homework/quiz the syllabus didn't mention.
 /// </summary>
-public class GradingComponent
+public class GradingComponent : IOwnedByUser
 {
     public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid UserId { get; set; }
     public Guid GradingSchemeId { get; set; }
     public GradingScheme? GradingScheme { get; set; }
 
@@ -43,9 +45,10 @@ public class GradingComponent
 /// An actual score the student recorded against a GradingComponent
 /// (e.g. "Kolokwium 1: 18/20").
 /// </summary>
-public class GradeEntry
+public class GradeEntry : IOwnedByUser
 {
     public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid UserId { get; set; }
     public Guid GradingComponentId { get; set; }
     public GradingComponent? GradingComponent { get; set; }
 

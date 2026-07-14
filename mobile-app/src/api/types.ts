@@ -91,3 +91,16 @@ export interface SubjectGradesResponse {
   totalWeightPercent: number;
   components: GradingComponentDto[];
 }
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  schoolName: string;
+}
+
+export interface AuthResponse {
+  token: string;
+  user: AuthUser;
+}

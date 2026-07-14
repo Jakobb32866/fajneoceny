@@ -5,9 +5,10 @@ namespace BackendApi.Domain;
 /// "repeat until all correct" stack behavior lives client-side; this just
 /// tracks what was requested and which cards were served, for history.
 /// </summary>
-public class QuizSession
+public class QuizSession : IOwnedByUser
 {
     public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid UserId { get; set; }
     public Guid LessonId { get; set; }
     public Lesson? Lesson { get; set; }
 

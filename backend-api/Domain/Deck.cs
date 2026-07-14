@@ -5,9 +5,10 @@ namespace BackendApi.Domain;
 /// AI quiz generator (one deck per generation run) or by hand ("from scratch").
 /// The deck is the unit the student renames, reviews, and edits.
 /// </summary>
-public class Deck
+public class Deck : IOwnedByUser
 {
     public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid UserId { get; set; }
     public Guid LessonId { get; set; }
     public Lesson? Lesson { get; set; }
 

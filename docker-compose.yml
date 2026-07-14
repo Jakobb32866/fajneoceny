@@ -13,6 +13,18 @@ services:
       Ai__BaseUrl: http://ollama:11434/v1
       Ai__ApiKey: ollama          # not checked locally, but the field must be non-empty
       Ai__Model: qwen2.5:3b
+      # App JWT signing. Jwt__Key is a dev-only placeholder — production MUST
+      # override it with a long random secret kept out of source control.
+      Jwt__Key: dev-only-placeholder-signing-key-change-me-32chars-min
+      Jwt__Issuer: fajneoceny
+      Jwt__Audience: fajneoceny-app
+      Jwt__ExpiryMinutes: "43200"
+      # Google Sign-In client id(s) allowed as the ID token audience.
+      # Production MUST set this (uncomment and fill in the real OAuth client
+      # id below). Left unset here so dev/self-host environments without
+      # Google Sign-In configured still start — GoogleTokenVerifier skips the
+      # audience check when no client ids are configured.
+      # Google__ClientIds__0: "your-client-id.apps.googleusercontent.com"
     depends_on:
       model-puller:
         condition: service_completed_successfully
