@@ -13,5 +13,4 @@ RUN npm ci
 COPY . .
 
 EXPOSE 8081
-
 CMD ["npx", "expo", "start", "--web", "--host", "lan"]

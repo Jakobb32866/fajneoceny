@@ -38,7 +38,7 @@ public static class GradingSchemeExtractor
         return results;
     }
 
-    private static GradeCategory GuessCategory(string name)
+    public static GradeCategory GuessCategory(string name)
     {
         var lower = name.ToLowerInvariant();
         if (lower.Contains("projekt") || lower.Contains("project"))
