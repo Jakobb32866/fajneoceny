@@ -11,6 +11,7 @@ import {
   type NativeSyntheticEvent,
   type TextInputSelectionChangeEventData,
 } from 'react-native';
+import { theme } from '../theme';
 
 type Selection = { start: number; end: number };
 
@@ -331,6 +332,7 @@ function EditorBody({
           style={[styles.input, fullscreen && styles.inputFullscreen]}
           multiline
           placeholder={placeholder ?? 'Pisz notatki…'}
+          placeholderTextColor={theme.colors.text.tertiary}
           value={value}
           onChangeText={onChangeText}
           onSelectionChange={onSelectionChange}
@@ -388,10 +390,10 @@ export function RichNoteEditor({ value, onChangeText, placeholder }: RichNoteEdi
 const styles = StyleSheet.create({
   wrapper: {
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 12,
+    borderColor: theme.colors.border.default,
+    borderRadius: theme.radius.md,
     overflow: 'hidden',
-    backgroundColor: 'white',
+    backgroundColor: theme.colors.surface.card,
   },
   wrapperFullscreen: {
     flex: 1,
@@ -400,70 +402,76 @@ const styles = StyleSheet.create({
   },
   modalRoot: {
     flex: 1,
-    backgroundColor: 'white',
+    backgroundColor: theme.colors.surface.card,
     paddingTop: Platform.OS === 'ios' ? 52 : 16,
-    paddingHorizontal: 12,
-    paddingBottom: 12,
+    paddingHorizontal: theme.spacing[3],
+    paddingBottom: theme.spacing[3],
   },
   headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 6,
+    paddingHorizontal: theme.spacing[2],
+    paddingVertical: theme.spacing[1] + 2,
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    borderBottomColor: theme.colors.border.default,
   },
   modeToggle: {
     flexDirection: 'row',
-    backgroundColor: '#f2f4f7',
-    borderRadius: 8,
+    backgroundColor: theme.colors.surface.sunken,
+    borderRadius: theme.radius.sm,
     padding: 2,
   },
-  modeButton: { paddingHorizontal: 12, paddingVertical: 5, borderRadius: 6 },
-  modeButtonActive: { backgroundColor: 'white' },
-  modeText: { fontSize: 12, color: '#666', fontWeight: '600' },
-  modeTextActive: { fontSize: 12, color: '#111827', fontWeight: '700' },
+  modeButton: { paddingHorizontal: theme.spacing[3], paddingVertical: 5, borderRadius: 6 },
+  modeButtonActive: { backgroundColor: theme.colors.surface.card },
+  modeText: { fontSize: theme.font.size.caption, color: theme.colors.text.secondary, fontFamily: theme.font.family.sansSemibold },
+  modeTextActive: { fontSize: theme.font.size.caption, color: theme.colors.text.primary, fontFamily: theme.font.family.sansBold },
   fullscreenButton: {
     width: 32,
     height: 32,
-    borderRadius: 8,
+    borderRadius: theme.radius.sm,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#f2f4f7',
+    backgroundColor: theme.colors.surface.sunken,
   },
-  fullscreenIcon: { fontSize: 16, color: '#374151' },
+  fullscreenIcon: { fontSize: 16, color: theme.colors.text.secondary },
   toolbar: {
     maxHeight: 44,
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    borderBottomColor: theme.colors.border.default,
   },
-  toolbarContent: { alignItems: 'center', paddingHorizontal: 6, paddingVertical: 6, gap: 6 },
+  toolbarContent: { alignItems: 'center', paddingHorizontal: theme.spacing[2] - 2, paddingVertical: theme.spacing[2] - 2, gap: theme.spacing[2] - 2 },
   toolButton: {
     minWidth: 34,
     height: 32,
-    paddingHorizontal: 8,
-    borderRadius: 8,
-    backgroundColor: '#f2f4f7',
+    paddingHorizontal: theme.spacing[2],
+    borderRadius: theme.radius.sm,
+    backgroundColor: theme.colors.surface.sunken,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  toolLabel: { fontSize: 14, color: '#374151', fontWeight: '600' },
+  toolLabel: { fontSize: theme.font.size.bodySm, color: theme.colors.text.secondary, fontFamily: theme.font.family.sansSemibold },
   toolLabelBold: { fontWeight: '900' },
   toolLabelItalic: { fontStyle: 'italic' },
   input: {
     minHeight: 140,
-    padding: 12,
-    fontSize: 14,
-    color: '#111827',
+    padding: theme.spacing[3],
+    fontSize: theme.font.size.bodySm,
+    color: theme.colors.text.primary,
   },
   inputFullscreen: { flex: 1 },
   preview: { minHeight: 140 },
   previewFullscreen: { flex: 1 },
 });
 
+// The `pv` styles below render the user's actual note content (markdown
+// preview: bold/italic/code/headings/lists/quotes). These colors are part of
+// the rich-text content model's visual semantics, not chrome, so they're
+// deliberately left as their original hardcoded values rather than swapped
+// for theme tokens — only the placeholder (empty-state chrome text) uses the
+// theme.
 const pv = StyleSheet.create({
-  placeholder: { color: '#9ca3af', fontStyle: 'italic', padding: 4 },
+  placeholder: { color: theme.colors.text.tertiary, fontStyle: 'italic', padding: 4 },
   body: { fontSize: 14, color: '#111827', lineHeight: 21, flex: 1 },
   bold: { fontWeight: '800' },
   italic: { fontStyle: 'italic' },

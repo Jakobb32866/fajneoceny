@@ -4,6 +4,7 @@ import { DashboardScreen } from '../screens/DashboardScreen';
 import { DeckEditorScreen } from '../screens/DeckEditorScreen';
 import { LessonScreen } from '../screens/LessonScreen';
 import { QuizPlayerScreen } from '../screens/QuizPlayerScreen';
+import { SettingsScreen } from '../screens/SettingsScreen';
 import { SubjectScreen } from '../screens/SubjectScreen';
 import type { RootStackParamList } from './types';
 
@@ -30,6 +31,7 @@ export function RootNavigator() {
         component={DailyFlashcardsScreen}
         options={{ title: 'Dzisiejsze fiszki' }}
       />
+      <Stack.Screen name="Settings" component={SettingsScreen} options={{ title: 'Ustawienia' }} />
     </Stack.Navigator>
   );
 }

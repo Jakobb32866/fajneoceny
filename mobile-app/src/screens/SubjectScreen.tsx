@@ -1,21 +1,17 @@
-import { useCallback, useState } from 'react';
-import { useFocusEffect } from '@react-navigation/native';
+import { useState } from 'react';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import * as DocumentPicker from 'expo-document-picker';
-import {
-  ActivityIndicator,
-  Alert,
-  FlatList,
-  Modal,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Pressable, View } from 'react-native';
+import { invalidate } from '../api/cache';
+import { cacheKeys } from '../api/cacheKeys';
 import { api } from '../api/client';
+import { useCachedQuery } from '../hooks/useCachedQuery';
 import { GradeSheet } from '../components/GradeSheet';
+import { Button } from '../components/ui/Button';
+import { TextField } from '../components/ui/Input';
+import { ModalSheet } from '../components/ui/ModalSheet';
+import { Text } from '../components/ui/Text';
+import { theme } from '../theme';
 import type { RootStackParamList } from '../navigation/types';
 import type { LessonSummary } from '../api/types';
 
@@ -25,18 +21,20 @@ type Tab = 'lessons' | 'grades';
 export function SubjectScreen({ route, navigation }: Props) {
   const { subjectId, subjectName } = route.params;
   const [tab, setTab] = useState<Tab>('lessons');
-  const [lessons, setLessons] = useState<LessonSummary[] | null>(null);
   const [createVisible, setCreateVisible] = useState(false);
   const [syllabusChooserVisible, setSyllabusChooserVisible] = useState(false);
   const [pasteVisible, setPasteVisible] = useState(false);
 
-  const load = useCallback(() => {
-    api.listLessons(subjectId).then(setLessons).catch(() => setLessons([]));
-  }, [subjectId]);
-
-  useFocusEffect(load);
+  const lessonsQuery = useCachedQuery<LessonSummary[]>(cacheKeys.subjectLessons(subjectId), () =>
+    api.listLessons(subjectId),
+  );
+  const lessons = lessonsQuery.data ?? (lessonsQuery.error ? [] : null);
 
   const onSyllabusLoaded = (count: number) => {
+    // An upload rewrites the draft grading components. GradeSheet used to pick
+    // this up for free by remounting on the tab switch; now that its data is
+    // cached, the invalidation has to be explicit.
+    invalidate(cacheKeys.subjectGrades(subjectId));
     Alert.alert(
       'Zasady zaliczenia wczytane',
       `Znaleziono ${count} składników oceny. Sprawdź i popraw je w zakładce "Arkusz ocen".`,
@@ -77,47 +75,118 @@ export function SubjectScreen({ route, navigation }: Props) {
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>{subjectName}</Text>
+    <View style={{ flex: 1, backgroundColor: theme.colors.surface.app }}>
+      <Text.HeadlineLg style={{ paddingHorizontal: theme.spacing[4], paddingTop: theme.spacing[4] }}>
+        {subjectName}
+      </Text.HeadlineLg>
 
-      <View style={styles.tabBar}>
-        <TouchableOpacity style={[styles.tab, tab === 'lessons' && styles.tabActive]} onPress={() => setTab('lessons')}>
-          <Text style={tab === 'lessons' ? styles.tabTextActive : styles.tabText}>Lekcje</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={[styles.tab, tab === 'grades' && styles.tabActive]} onPress={() => setTab('grades')}>
-          <Text style={tab === 'grades' ? styles.tabTextActive : styles.tabText}>Arkusz ocen</Text>
-        </TouchableOpacity>
+      <View
+        style={{
+          flexDirection: 'row',
+          margin: theme.spacing[4],
+          backgroundColor: theme.colors.surface.sunken,
+          borderRadius: theme.radius.md,
+          padding: theme.spacing[1],
+        }}
+      >
+        <Pressable
+          style={{
+            flex: 1,
+            paddingVertical: theme.spacing[2],
+            borderRadius: theme.radius.sm,
+            alignItems: 'center',
+            backgroundColor: tab === 'lessons' ? theme.colors.brand.default : 'transparent',
+          }}
+          onPress={() => setTab('lessons')}
+        >
+          <Text.BodySm
+            style={{
+              fontFamily: theme.font.family.sansSemibold,
+              color: tab === 'lessons' ? theme.colors.brand.onBrand : theme.colors.text.secondary,
+            }}
+          >
+            Lekcje
+          </Text.BodySm>
+        </Pressable>
+        <Pressable
+          style={{
+            flex: 1,
+            paddingVertical: theme.spacing[2],
+            borderRadius: theme.radius.sm,
+            alignItems: 'center',
+            backgroundColor: tab === 'grades' ? theme.colors.brand.default : 'transparent',
+          }}
+          onPress={() => setTab('grades')}
+        >
+          <Text.BodySm
+            style={{
+              fontFamily: theme.font.family.sansSemibold,
+              color: tab === 'grades' ? theme.colors.brand.onBrand : theme.colors.text.secondary,
+            }}
+          >
+            Arkusz ocen
+          </Text.BodySm>
+        </Pressable>
       </View>
 
       {tab === 'lessons' ? (
         <>
-          <TouchableOpacity style={styles.syllabusButton} onPress={() => setSyllabusChooserVisible(true)}>
-            <Text style={styles.syllabusButtonText}>📄 Wgraj zasady zaliczenia</Text>
-          </TouchableOpacity>
+          <View style={{ marginHorizontal: theme.spacing[4], marginBottom: theme.spacing[2] }}>
+            <Button
+              title="📄 Wgraj zasady zaliczenia"
+              variant="ghost"
+              fullWidth
+              onPress={() => setSyllabusChooserVisible(true)}
+            />
+          </View>
 
           {lessons === null ? (
-            <ActivityIndicator style={{ marginTop: 32 }} />
+            <ActivityIndicator style={{ marginTop: theme.spacing[8] }} />
           ) : (
             <FlatList
               data={lessons}
               keyExtractor={(l) => l.id}
-              contentContainerStyle={{ padding: 16, gap: 12 }}
-              ListEmptyComponent={<Text style={styles.empty}>Brak lekcji — dodaj pierwszą poniżej.</Text>}
+              contentContainerStyle={{ padding: theme.spacing[4], gap: theme.spacing[3] }}
+              ListEmptyComponent={
+                <Text.Body style={{ color: theme.colors.text.tertiary, textAlign: 'center', marginTop: theme.spacing[6] }}>
+                  Brak lekcji — dodaj pierwszą poniżej.
+                </Text.Body>
+              }
               renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={styles.lessonCard}
+                <Pressable
+                  style={{
+                    backgroundColor: theme.colors.surface.sunken,
+                    borderRadius: theme.radius.md,
+                    padding: theme.spacing[4],
+                  }}
                   onPress={() => navigation.navigate('Lesson', { lessonId: item.id, lessonTitle: item.title })}
                 >
-                  <Text style={styles.lessonTitle}>{item.title}</Text>
-                  <Text style={styles.lessonMeta}>{item.flashcardCount} fiszek</Text>
-                </TouchableOpacity>
+                  <Text.BodyLg style={{ fontFamily: theme.font.family.sansSemibold }}>{item.title}</Text.BodyLg>
+                  <Text.BodySm style={{ color: theme.colors.text.secondary, marginTop: theme.spacing[1] }}>
+                    {item.flashcardCount} fiszek
+                  </Text.BodySm>
+                </Pressable>
               )}
             />
           )}
 
-          <TouchableOpacity style={styles.fab} onPress={() => setCreateVisible(true)}>
-            <Text style={styles.fabText}>+</Text>
-          </TouchableOpacity>
+          <Pressable
+            style={{
+              position: 'absolute',
+              right: theme.spacing[5],
+              bottom: theme.spacing[6],
+              width: 56,
+              height: 56,
+              borderRadius: theme.radius.full,
+              backgroundColor: theme.colors.brand.default,
+              alignItems: 'center',
+              justifyContent: 'center',
+              ...theme.shadows.md,
+            }}
+            onPress={() => setCreateVisible(true)}
+          >
+            <Text.HeadlineMd style={{ color: theme.colors.brand.onBrand, lineHeight: 30 }}>+</Text.HeadlineMd>
+          </Pressable>
 
           <CreateLessonModal
             visible={createVisible}
@@ -125,7 +194,8 @@ export function SubjectScreen({ route, navigation }: Props) {
             onSubmit={async (title) => {
               await api.createLesson(subjectId, title);
               setCreateVisible(false);
-              load();
+              invalidate(cacheKeys.subjectLessons(subjectId));
+              invalidate(cacheKeys.subjects); // lessonCount on the dashboard
             }}
           />
 
@@ -167,27 +237,44 @@ function SyllabusChooserModal({
   onPasteText: () => void;
 }) {
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.modalOverlay} onPress={onClose}>
-        <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
-          <Text style={styles.modalTitle}>Wgraj zasady zaliczenia</Text>
-          <TouchableOpacity style={styles.choiceButton} onPress={onPickFile}>
-            <Text style={styles.choiceIcon}>📄</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.choiceTitle}>Wgraj plik z dysku</Text>
-              <Text style={styles.choiceSubtitle}>PDF lub Word (.docx)</Text>
-            </View>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.choiceButton} onPress={onPasteText}>
-            <Text style={styles.choiceIcon}>📋</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.choiceTitle}>Wklej tekst</Text>
-              <Text style={styles.choiceSubtitle}>Skopiuj zasady z maila lub strony</Text>
-            </View>
-          </TouchableOpacity>
-        </Pressable>
+    <ModalSheet visible={visible} onClose={onClose} title="Wgraj zasady zaliczenia">
+      <Pressable
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: theme.spacing[3],
+          borderWidth: 1,
+          borderColor: theme.colors.border.default,
+          borderRadius: theme.radius.md,
+          padding: theme.spacing[4],
+        }}
+        onPress={onPickFile}
+      >
+        <Text.Title>📄</Text.Title>
+        <View style={{ flex: 1 }}>
+          <Text.Body style={{ fontFamily: theme.font.family.sansBold }}>Wgraj plik z dysku</Text.Body>
+          <Text.Caption style={{ marginTop: theme.spacing[1] }}>PDF lub Word (.docx)</Text.Caption>
+        </View>
       </Pressable>
-    </Modal>
+      <Pressable
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: theme.spacing[3],
+          borderWidth: 1,
+          borderColor: theme.colors.border.default,
+          borderRadius: theme.radius.md,
+          padding: theme.spacing[4],
+        }}
+        onPress={onPasteText}
+      >
+        <Text.Title>📋</Text.Title>
+        <View style={{ flex: 1 }}>
+          <Text.Body style={{ fontFamily: theme.font.family.sansBold }}>Wklej tekst</Text.Body>
+          <Text.Caption style={{ marginTop: theme.spacing[1] }}>Skopiuj zasady z maila lub strony</Text.Caption>
+        </View>
+      </Pressable>
+    </ModalSheet>
   );
 }
 
@@ -203,28 +290,22 @@ function PasteSyllabusModal({
   const [text, setText] = useState('');
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.modalOverlay} onPress={onClose}>
-        <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
-          <Text style={styles.modalTitle}>Wklej zasady zaliczenia</Text>
-          <TextInput
-            style={styles.pasteInput}
-            multiline
-            textAlignVertical="top"
-            placeholder="Wklej tutaj treść zasad zaliczenia…"
-            value={text}
-            onChangeText={setText}
-          />
-          <TouchableOpacity
-            style={[styles.submitButton, !text.trim() && styles.submitButtonDisabled]}
-            disabled={!text.trim()}
-            onPress={() => text.trim() && onSubmit(text.trim())}
-          >
-            <Text style={styles.submitText}>Analizuj</Text>
-          </TouchableOpacity>
-        </Pressable>
-      </Pressable>
-    </Modal>
+    <ModalSheet visible={visible} onClose={onClose} title="Wklej zasady zaliczenia">
+      <TextField
+        multiline
+        textAlignVertical="top"
+        placeholder="Wklej tutaj treść zasad zaliczenia…"
+        value={text}
+        onChangeText={setText}
+        style={{ minHeight: 160 }}
+      />
+      <Button
+        title="Analizuj"
+        disabled={!text.trim()}
+        onPress={() => text.trim() && onSubmit(text.trim())}
+        fullWidth
+      />
+    </ModalSheet>
   );
 }
 
@@ -240,72 +321,9 @@ function CreateLessonModal({
   const [title, setTitle] = useState('');
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.modalOverlay} onPress={onClose}>
-        <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
-          <Text style={styles.modalTitle}>Nowa lekcja</Text>
-          <TextInput style={styles.input} placeholder="Tytuł lekcji" value={title} onChangeText={setTitle} />
-          <TouchableOpacity style={styles.submitButton} onPress={() => title.trim() && onSubmit(title.trim())}>
-            <Text style={styles.submitText}>Utwórz</Text>
-          </TouchableOpacity>
-        </Pressable>
-      </Pressable>
-    </Modal>
+    <ModalSheet visible={visible} onClose={onClose} title="Nowa lekcja">
+      <TextField placeholder="Tytuł lekcji" value={title} onChangeText={setTitle} />
+      <Button title="Utwórz" onPress={() => title.trim() && onSubmit(title.trim())} fullWidth />
+    </ModalSheet>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: 'white' },
-  title: { fontSize: 22, fontWeight: '700', paddingHorizontal: 16, paddingTop: 16 },
-  tabBar: { flexDirection: 'row', margin: 16, backgroundColor: '#f2f4f7', borderRadius: 12, padding: 4 },
-  tab: { flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center' },
-  tabActive: { backgroundColor: '#111827' },
-  tabText: { color: '#555', fontWeight: '600' },
-  tabTextActive: { color: 'white', fontWeight: '600' },
-  syllabusButton: { marginHorizontal: 16, marginBottom: 8, backgroundColor: '#eef2ff', borderRadius: 10, padding: 12 },
-  syllabusButtonText: { color: '#3730a3', fontWeight: '600', textAlign: 'center' },
-  empty: { textAlign: 'center', color: '#999', marginTop: 24 },
-  lessonCard: { backgroundColor: '#f2f4f7', borderRadius: 14, padding: 16 },
-  lessonTitle: { fontSize: 16, fontWeight: '700' },
-  lessonMeta: { color: '#666', marginTop: 2, fontSize: 13 },
-  fab: {
-    position: 'absolute',
-    right: 20,
-    bottom: 28,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#111827',
-    alignItems: 'center',
-    justifyContent: 'center',
-    elevation: 4,
-  },
-  fabText: { color: 'white', fontSize: 28, lineHeight: 30 },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', padding: 24 },
-  modalCard: { backgroundColor: 'white', borderRadius: 16, padding: 20, gap: 12 },
-  modalTitle: { fontSize: 17, fontWeight: '700' },
-  input: { borderWidth: 1, borderColor: '#ddd', borderRadius: 8, padding: 10, fontSize: 14 },
-  submitButton: { backgroundColor: '#111827', borderRadius: 10, paddingVertical: 12, alignItems: 'center', marginTop: 4 },
-  submitButtonDisabled: { backgroundColor: '#9ca3af' },
-  submitText: { color: 'white', fontWeight: '700' },
-  choiceButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    borderRadius: 12,
-    padding: 14,
-  },
-  choiceIcon: { fontSize: 22 },
-  choiceTitle: { fontSize: 15, fontWeight: '700', color: '#111827' },
-  choiceSubtitle: { fontSize: 12, color: '#6b7280', marginTop: 2 },
-  pasteInput: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 10,
-    fontSize: 14,
-    minHeight: 160,
-  },
-});

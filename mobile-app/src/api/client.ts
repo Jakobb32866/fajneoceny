@@ -1,8 +1,12 @@
 import { API_BASE_URL } from './config';
+import { ApiError } from './errors';
 import { clearToken, getTokenSync } from './token';
 import type {
   AuthResponse,
   AuthUser,
+  DailyCardDto,
+  DailyResponse,
+  DailySummary,
   DeckDto,
   Difficulty,
   FlashcardDto,
@@ -10,6 +14,9 @@ import type {
   GradingComponentDto,
   LessonDetail,
   LessonSummary,
+  ReviewGrade,
+  ReviewResult,
+  SrsSettings,
   Subject,
   SubjectGradesResponse,
   SubjectSummary,
@@ -41,7 +48,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       onUnauthorized?.();
     }
     const text = await response.text().catch(() => '');
-    throw new Error(`${init?.method ?? 'GET'} ${path} failed: ${response.status} ${text}`);
+    throw new ApiError({
+      status: response.status,
+      method: init?.method ?? 'GET',
+      path,
+      body: text,
+    });
   }
 
   if (response.status === 204) return undefined as T;
@@ -149,10 +161,22 @@ export const api = {
 
   listLessonFlashcards: (lessonId: string) => request<FlashcardDto[]>(`/api/lessons/${lessonId}/flashcards`),
 
-  reviewFlashcard: (id: string, correct: boolean) =>
-    request<void>(`/api/flashcards/${id}/review`, { method: 'POST', body: JSON.stringify({ correct }) }),
+  reviewFlashcard: (id: string, grade: ReviewGrade) =>
+    request<ReviewResult>(`/api/flashcards/${id}/review`, { method: 'POST', body: JSON.stringify({ grade }) }),
 
-  getDailyFlashcards: (count = 30) => request<FlashcardDto[]>(`/api/flashcards/daily?count=${count}`),
+  // Today's session payload: due cards + capped new cards, plus backlog counts.
+  getDailyFlashcards: (count?: number) =>
+    request<DailyResponse>(`/api/flashcards/daily${count ? `?count=${count}` : ''}`),
+
+  // Lightweight counts for the dashboard badge.
+  getDailySummary: () => request<DailySummary>('/api/flashcards/daily/summary'),
+
+  // "Review ahead": the next cards closest to being forgotten.
+  getExtraFlashcards: (count: number, excludeIds: string[] = []) => {
+    const params = new URLSearchParams({ count: String(count) });
+    if (excludeIds.length) params.set('excludeIds', excludeIds.join(','));
+    return request<DailyCardDto[]>(`/api/flashcards/extra?${params.toString()}`);
+  },
 
   getStack: (params: { lessonId?: string; subjectId?: string } = {}) => {
     const query = new URLSearchParams(params as Record<string, string>).toString();
@@ -160,6 +184,11 @@ export const api = {
   },
 
   exportAudioUrl: () => `${API_BASE_URL}/api/flashcards/export-audio`,
+
+  // SRS settings (persisted server-side, synced across devices).
+  getSrsSettings: () => request<SrsSettings>('/api/settings/srs'),
+  updateSrsSettings: (settings: SrsSettings) =>
+    request<SrsSettings>('/api/settings/srs', { method: 'PUT', body: JSON.stringify(settings) }),
 
   // Auth
   auth: {

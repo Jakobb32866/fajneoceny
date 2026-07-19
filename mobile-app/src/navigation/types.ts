@@ -7,6 +7,7 @@ export type RootStackParamList = {
   QuizPlayer: { title: string; cards: FlashcardDto[] };
   DeckEditor: { deckId: string; lessonId: string };
   DailyFlashcards: undefined;
+  Settings: undefined;
 };
 
 export type QuizConfig = { count: number; difficulty: Difficulty };

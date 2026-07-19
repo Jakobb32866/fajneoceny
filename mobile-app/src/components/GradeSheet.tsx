@@ -1,17 +1,18 @@
-import { useCallback, useEffect, useState } from 'react';
-import {
-  ActivityIndicator,
-  Modal,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { useState } from 'react';
+import { ActivityIndicator, Pressable, ScrollView, View } from 'react-native';
+import { invalidate } from '../api/cache';
+import { cacheKeys } from '../api/cacheKeys';
 import { api } from '../api/client';
+import { useCachedQuery } from '../hooks/useCachedQuery';
 import type { GradeCategory, SubjectGradesResponse } from '../api/types';
+import { theme } from '../theme';
+import { Badge, type BadgeVariant } from './ui/Badge';
+import { Button } from './ui/Button';
+import { Card } from './ui/Card';
+import { Chip } from './ui/Chip';
+import { TextField } from './ui/Input';
+import { ModalSheet } from './ui/ModalSheet';
+import { Text } from './ui/Text';
 
 const CATEGORIES: GradeCategory[] = ['Project', 'Exam', 'Homework', 'Other'];
 const CATEGORY_LABELS: Record<GradeCategory, string> = {
@@ -30,94 +31,150 @@ function parseNumber(text: string): number {
   return Number(text.replace(',', '.').trim());
 }
 
+/**
+ * Polish-school grading thresholds: >=70% is a comfortably passing/good
+ * result (success), 50-69% is borderline (warning), below 50% is failing
+ * (danger). Used for both the summary figure color and the per-component
+ * average Badge.
+ */
+function gradeColor(percent: number | null): string {
+  if (percent === null) return theme.colors.text.tertiary;
+  if (percent >= 70) return theme.colors.status.success;
+  if (percent >= 50) return theme.colors.status.warning;
+  return theme.colors.status.danger;
+}
+
+function gradeBadgeVariant(percent: number | null): BadgeVariant {
+  if (percent === null) return 'neutral';
+  if (percent >= 70) return 'success';
+  if (percent >= 50) return 'warning';
+  return 'danger';
+}
+
 export function GradeSheet({ subjectId }: { subjectId: string }) {
-  const [grades, setGrades] = useState<SubjectGradesResponse | null>(null);
-  const [loading, setLoading] = useState(true);
   const [addComponentVisible, setAddComponentVisible] = useState(false);
   const [entryModalComponentId, setEntryModalComponentId] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      setGrades(await api.getGrades(subjectId));
-    } catch {
-      setGrades({ currentEstimatePercent: null, provisionalFinalPercent: 0, totalWeightPercent: 0, components: [] });
-    } finally {
-      setLoading(false);
-    }
-  }, [subjectId]);
+  const gradesQuery = useCachedQuery<SubjectGradesResponse>(cacheKeys.subjectGrades(subjectId), () =>
+    api.getGrades(subjectId),
+  );
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  const EMPTY: SubjectGradesResponse = {
+    currentEstimatePercent: null,
+    provisionalFinalPercent: 0,
+    totalWeightPercent: 0,
+    components: [],
+  };
+  const grades = gradesQuery.data ?? (gradesQuery.error ? EMPTY : null);
 
-  if (loading || !grades) {
+  // Every grade write also moves the subject's estimate, which the dashboard
+  // list renders — so the subject list has to be invalidated alongside.
+  const invalidateGrades = () => {
+    invalidate(cacheKeys.subjectGrades(subjectId));
+    invalidate(cacheKeys.subjects);
+  };
+
+  if (!grades) {
     return (
-      <View style={styles.center}>
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
         <ActivityIndicator />
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
-      <View style={styles.summaryRow}>
-        <View style={styles.summaryBox}>
-          <Text style={styles.summaryLabel}>Ocena bieżąca</Text>
-          <Text style={styles.summaryValue}>{formatPercent(grades.currentEstimatePercent)}</Text>
-        </View>
-        <View style={styles.summaryBox}>
-          <Text style={styles.summaryLabel}>Prognoza końcowa</Text>
-          <Text style={styles.summaryValue}>{grades.provisionalFinalPercent.toFixed(1)}%</Text>
-        </View>
-        <View style={styles.summaryBox}>
-          <Text style={styles.summaryLabel}>Suma wag</Text>
-          <Text style={styles.summaryValue}>{grades.totalWeightPercent.toFixed(0)}%</Text>
-        </View>
-      </View>
-
-      <ScrollView style={styles.table}>
-        <View style={[styles.row, styles.headerRow]}>
-          <Text style={[styles.cell, styles.headerCell, { flex: 2 }]}>Składnik</Text>
-          <Text style={[styles.cell, styles.headerCell]}>Waga</Text>
-          <Text style={[styles.cell, styles.headerCell]}>Średnia</Text>
+    <View style={{ flex: 1 }}>
+      <Card elevated style={{ margin: theme.spacing[4], gap: theme.spacing[3] }}>
+        <View>
+          <Text.Caption>Ocena bieżąca</Text.Caption>
+          <Text.Mono
+            style={{
+              fontSize: theme.font.size.display,
+              fontFamily: theme.font.family.monoMedium,
+              color: gradeColor(grades.currentEstimatePercent),
+            }}
+          >
+            {formatPercent(grades.currentEstimatePercent)}
+          </Text.Mono>
         </View>
 
+        <View style={{ flexDirection: 'row', gap: theme.spacing[6] }}>
+          <View>
+            <Text.Caption>Prognoza końcowa</Text.Caption>
+            <Text.Mono
+              style={{
+                fontSize: theme.font.size.title,
+                color: gradeColor(grades.provisionalFinalPercent),
+              }}
+            >
+              {grades.provisionalFinalPercent.toFixed(1)}%
+            </Text.Mono>
+          </View>
+          <View>
+            <Text.Caption>Suma wag</Text.Caption>
+            <Text.Mono style={{ fontSize: theme.font.size.title }}>{grades.totalWeightPercent.toFixed(0)}%</Text.Mono>
+          </View>
+        </View>
+      </Card>
+
+      <ScrollView contentContainerStyle={{ paddingHorizontal: theme.spacing[4], gap: theme.spacing[3], paddingBottom: theme.spacing[4] }}>
         {grades.components.map((component) => (
-          <View key={component.id}>
-            <View style={styles.row}>
-              <Text style={[styles.cell, { flex: 2 }]}>
-                {component.name}
-                {component.isAdHoc ? ' *' : ''}
-              </Text>
-              <Text style={styles.cell}>{component.weightPercent.toFixed(0)}%</Text>
-              <Text style={styles.cell}>{formatPercent(component.averageScorePercent)}</Text>
+          <Card key={component.id}>
+            <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+              <View style={{ flex: 1, marginRight: theme.spacing[3] }}>
+                <Text.BodyLg style={{ fontFamily: theme.font.family.sansSemibold }}>
+                  {component.name}
+                  {component.isAdHoc ? ' *' : ''}
+                </Text.BodyLg>
+                <Text.BodySm style={{ color: theme.colors.text.secondary, marginTop: theme.spacing[1] }}>
+                  {CATEGORY_LABELS[component.category]} · waga {component.weightPercent.toFixed(0)}%
+                </Text.BodySm>
+              </View>
+              <Badge label={formatPercent(component.averageScorePercent)} variant={gradeBadgeVariant(component.averageScorePercent)} />
             </View>
 
-            {component.entries.map((entry) => (
-              <View key={entry.id} style={styles.entryRow}>
-                <Text style={[styles.entryText, { flex: 2 }]}>{entry.name}</Text>
-                <Text style={styles.entryText}>
-                  {entry.score}/{entry.maxScore}
-                </Text>
-                <TouchableOpacity onPress={() => api.deleteGradeEntry(entry.id).then(load)}>
-                  <Text style={styles.deleteText}>usuń</Text>
-                </TouchableOpacity>
+            {component.entries.length > 0 ? (
+              <View style={{ marginTop: theme.spacing[3] }}>
+                {component.entries.map((entry, index) => (
+                  <View key={entry.id}>
+                    {index > 0 ? <View style={{ height: 1, backgroundColor: theme.colors.border.default }} /> : null}
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        paddingVertical: theme.spacing[2],
+                      }}
+                    >
+                      <Text.BodySm style={{ flex: 1, color: theme.colors.text.secondary }}>{entry.name}</Text.BodySm>
+                      <Text.Mono style={{ color: theme.colors.text.secondary, marginRight: theme.spacing[3] }}>
+                        {entry.score}/{entry.maxScore}
+                      </Text.Mono>
+                      <Pressable onPress={() => api.deleteGradeEntry(entry.id).then(invalidateGrades)}>
+                        <Text.Caption style={{ color: theme.colors.status.danger }}>usuń</Text.Caption>
+                      </Pressable>
+                    </View>
+                  </View>
+                ))}
               </View>
-            ))}
+            ) : null}
 
-            <TouchableOpacity style={styles.addEntryButton} onPress={() => setEntryModalComponentId(component.id)}>
-              <Text style={styles.addEntryText}>+ dodaj ocenę</Text>
-            </TouchableOpacity>
-          </View>
+            <View style={{ marginTop: theme.spacing[3] }}>
+              <Button
+                title="+ dodaj ocenę"
+                variant="ghost"
+                size="sm"
+                onPress={() => setEntryModalComponentId(component.id)}
+              />
+            </View>
+          </Card>
         ))}
 
-        <Text style={styles.legend}>* dodane ręcznie (poza pierwotnymi zasadami zaliczenia)</Text>
-      </ScrollView>
+        <Text.Caption style={{ color: theme.colors.text.tertiary }}>
+          * dodane ręcznie (poza pierwotnymi zasadami zaliczenia)
+        </Text.Caption>
 
-      <TouchableOpacity style={styles.addComponentButton} onPress={() => setAddComponentVisible(true)}>
-        <Text style={styles.addComponentText}>+ Dodaj nowy składnik oceny</Text>
-      </TouchableOpacity>
+        <Button title="+ Dodaj nowy składnik oceny" onPress={() => setAddComponentVisible(true)} fullWidth />
+      </ScrollView>
 
       <AddComponentModal
         visible={addComponentVisible}
@@ -125,7 +182,7 @@ export function GradeSheet({ subjectId }: { subjectId: string }) {
         onSubmit={async (name, category, weight) => {
           await api.addGradingComponent(subjectId, name, category, weight);
           setAddComponentVisible(false);
-          load();
+          invalidateGrades();
         }}
       />
 
@@ -136,7 +193,7 @@ export function GradeSheet({ subjectId }: { subjectId: string }) {
           if (!entryModalComponentId) return;
           await api.addGradeEntry(entryModalComponentId, name, score, maxScore);
           setEntryModalComponentId(null);
-          load();
+          invalidateGrades();
         }}
       />
     </View>
@@ -178,40 +235,17 @@ function AddComponentModal({
   };
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.modalOverlay} onPress={onClose}>
-        <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
-          <Text style={styles.modalTitle}>Nowy składnik oceny</Text>
-          <TextInput style={styles.input} placeholder="Nazwa (np. Kartkówka 3)" value={name} onChangeText={setName} />
-          <View style={styles.chipRow}>
-            {CATEGORIES.map((c) => (
-              <TouchableOpacity
-                key={c}
-                style={[styles.chip, category === c && styles.chipSelected]}
-                onPress={() => setCategory(c)}
-              >
-                <Text style={category === c ? styles.chipTextSelected : styles.chipText}>{CATEGORY_LABELS[c]}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-          <TextInput
-            style={styles.input}
-            placeholder="Waga w % (np. 10)"
-            keyboardType="numeric"
-            value={weight}
-            onChangeText={setWeight}
-          />
-          {error ? <Text style={styles.errorText}>{error}</Text> : null}
-          <TouchableOpacity
-            style={[styles.submitButton, submitting && styles.submitButtonDisabled]}
-            disabled={submitting}
-            onPress={submit}
-          >
-            <Text style={styles.submitText}>{submitting ? 'Dodawanie…' : 'Dodaj'}</Text>
-          </TouchableOpacity>
-        </Pressable>
-      </Pressable>
-    </Modal>
+    <ModalSheet visible={visible} onClose={onClose} title="Nowy składnik oceny">
+      <TextField placeholder="Nazwa (np. Kartkówka 3)" value={name} onChangeText={setName} />
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing[2] }}>
+        {CATEGORIES.map((c) => (
+          <Chip key={c} label={CATEGORY_LABELS[c]} selected={category === c} onPress={() => setCategory(c)} />
+        ))}
+      </View>
+      <TextField placeholder="Waga w % (np. 10)" keyboardType="numeric" value={weight} onChangeText={setWeight} />
+      {error ? <Text.BodySm style={{ color: theme.colors.status.danger }}>{error}</Text.BodySm> : null}
+      <Button title="Dodaj" onPress={submit} loading={submitting} fullWidth />
+    </ModalSheet>
   );
 }
 
@@ -252,64 +286,12 @@ function AddEntryModal({
   };
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.modalOverlay} onPress={onClose}>
-        <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
-          <Text style={styles.modalTitle}>Nowa ocena</Text>
-          <TextInput style={styles.input} placeholder="Nazwa (np. Zadanie 2)" value={name} onChangeText={setName} />
-          <TextInput style={styles.input} placeholder="Wynik" keyboardType="numeric" value={score} onChangeText={setScore} />
-          <TextInput
-            style={styles.input}
-            placeholder="Maksymalny wynik"
-            keyboardType="numeric"
-            value={maxScore}
-            onChangeText={setMaxScore}
-          />
-          {error ? <Text style={styles.errorText}>{error}</Text> : null}
-          <TouchableOpacity
-            style={[styles.submitButton, submitting && styles.submitButtonDisabled]}
-            disabled={submitting}
-            onPress={submit}
-          >
-            <Text style={styles.submitText}>{submitting ? 'Dodawanie…' : 'Dodaj'}</Text>
-          </TouchableOpacity>
-        </Pressable>
-      </Pressable>
-    </Modal>
+    <ModalSheet visible={visible} onClose={onClose} title="Nowa ocena">
+      <TextField placeholder="Nazwa (np. Zadanie 2)" value={name} onChangeText={setName} />
+      <TextField placeholder="Wynik" keyboardType="numeric" value={score} onChangeText={setScore} />
+      <TextField placeholder="Maksymalny wynik" keyboardType="numeric" value={maxScore} onChangeText={setMaxScore} />
+      {error ? <Text.BodySm style={{ color: theme.colors.status.danger }}>{error}</Text.BodySm> : null}
+      <Button title="Dodaj" onPress={submit} loading={submitting} fullWidth />
+    </ModalSheet>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  summaryRow: { flexDirection: 'row', gap: 8, padding: 16 },
-  summaryBox: { flex: 1, backgroundColor: '#f2f4f7', borderRadius: 12, padding: 12, alignItems: 'center' },
-  summaryLabel: { fontSize: 11, color: '#666' },
-  summaryValue: { fontSize: 18, fontWeight: '700', marginTop: 4 },
-  table: { flex: 1, paddingHorizontal: 16 },
-  row: { flexDirection: 'row', paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: '#ddd' },
-  headerRow: { borderBottomWidth: 1, borderColor: '#999' },
-  cell: { flex: 1, fontSize: 14 },
-  headerCell: { fontWeight: '700', color: '#444' },
-  entryRow: { flexDirection: 'row', paddingLeft: 12, paddingVertical: 6, alignItems: 'center' },
-  entryText: { flex: 1, fontSize: 13, color: '#555' },
-  deleteText: { color: '#c0392b', fontSize: 12 },
-  addEntryButton: { paddingLeft: 12, paddingVertical: 6 },
-  addEntryText: { color: '#2563eb', fontSize: 13 },
-  legend: { fontSize: 11, color: '#999', marginVertical: 12 },
-  addComponentButton: { margin: 16, backgroundColor: '#111827', borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
-  addComponentText: { color: 'white', fontWeight: '600' },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', padding: 24 },
-  modalCard: { backgroundColor: 'white', borderRadius: 16, padding: 20, gap: 12 },
-  modalTitle: { fontSize: 17, fontWeight: '700' },
-  input: { borderWidth: 1, borderColor: '#ddd', borderRadius: 8, padding: 10, fontSize: 14 },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, backgroundColor: '#f2f4f7' },
-  chipSelected: { backgroundColor: '#111827' },
-  chipText: { fontSize: 12, color: '#333' },
-  chipTextSelected: { fontSize: 12, color: 'white' },
-  submitButton: { backgroundColor: '#111827', borderRadius: 10, paddingVertical: 12, alignItems: 'center', marginTop: 4 },
-  submitButtonDisabled: { backgroundColor: '#9ca3af' },
-  submitText: { color: 'white', fontWeight: '700' },
-  errorText: { color: '#dc2626', fontSize: 13 },
-});

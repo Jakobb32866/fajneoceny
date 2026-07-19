@@ -3,6 +3,7 @@ import * as AuthSession from 'expo-auth-session';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
 import { Platform } from 'react-native';
+import { clearCache } from '../api/cache';
 import { api, setUnauthorizedHandler } from '../api/client';
 import { GOOGLE_OAUTH_CLIENT_IDS } from '../api/config';
 import { clearToken, getToken, setToken } from '../api/token';
@@ -55,6 +56,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     setUnauthorizedHandler(() => {
+      clearCache();
       setUser(null);
       setStatus('signedOut');
     });
@@ -138,6 +140,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function signOut() {
     await clearToken();
+    // Must happen on every sign-out: cached grades/settings are per-user, and
+    // the next account to sign in on this device would otherwise see them.
+    clearCache();
     setUser(null);
     setStatus('signedOut');
   }

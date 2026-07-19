@@ -40,7 +40,7 @@ builder.Services.AddSingleton<IFileStorageService, FileStorageService>();
 builder.Services.AddSingleton<IGradeCalculationService, GradeCalculationService>();
 builder.Services.AddSingleton<IDocumentTextExtractionService, DocumentTextExtractionService>();
 
-builder.Services.AddSingleton<ISpacedRepetitionService, Sm2SpacedRepetitionService>();
+builder.Services.AddSingleton<ISpacedRepetitionService, AnkiScheduler>();
 builder.Services.AddSingleton<IDailyFlashcardSelector, DailyFlashcardSelector>();
 builder.Services.AddSingleton<HeuristicFlashcardGenerationService>();
 // Local LLM inference (Ollama, CPU) can take well over HttpClient's default
@@ -113,5 +113,6 @@ app.MapSubjectEndpoints();
 app.MapLessonEndpoints();
 app.MapDeckEndpoints();
 app.MapFlashcardEndpoints();
+app.MapSettingsEndpoints();
 
 app.Run();

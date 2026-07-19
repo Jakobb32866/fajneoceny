@@ -1,6 +1,9 @@
 .DS_Store
 .claude/settings.local.json
 
+# Local compose config (LAN_IP is machine-specific)
+.env
+
 # .NET
 backend-api/bin/
 backend-api/obj/
@@ -9,6 +12,8 @@ backend-api/app.db-*
 backend-api/storage/
 backend-api/.tts-venv/
 backend-api/voices/
+backend-api.Tests/bin/
+backend-api.Tests/obj/
 
 # Node / Expo (mobile-app has its own .gitignore too)
 mobile-app/node_modules/

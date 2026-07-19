@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
 import { useAuth } from '../auth/AuthContext';
+import { googleErrorMessage, loginErrorMessage, registerErrorMessage } from '../auth/authErrors';
+import { Banner } from '../components/ui/Banner';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { TextField } from '../components/ui/Input';
@@ -43,7 +45,7 @@ export function LoginScreen() {
         });
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Coś poszło nie tak. Spróbuj ponownie.');
+      setError(mode === 'login' ? loginErrorMessage(e) : registerErrorMessage(e));
     } finally {
       setLoading(false);
     }
@@ -58,7 +60,7 @@ export function LoginScreen() {
         setGoogleNeedsSchool(true);
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Logowanie przez Google nie powiodło się.');
+      setError(googleErrorMessage(e));
     } finally {
       setGoogleLoading(false);
     }
@@ -70,7 +72,7 @@ export function LoginScreen() {
     try {
       await completeGoogleProfile(googleSchoolName.trim());
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Nie udało się zapisać szkoły. Spróbuj ponownie.');
+      setError(googleErrorMessage(e));
     } finally {
       setSavingGoogleSchool(false);
     }
@@ -104,7 +106,7 @@ export function LoginScreen() {
                 onChangeText={setGoogleSchoolName}
                 autoCapitalize="words"
               />
-              {error ? <Text.BodySm style={{ color: theme.colors.status.danger }}>{error}</Text.BodySm> : null}
+              {error ? <Banner message={error} /> : null}
               <Button
                 title="Zapisz"
                 onPress={handleSaveGoogleSchool}
@@ -149,7 +151,7 @@ export function LoginScreen() {
                 </>
               ) : null}
 
-              {error ? <Text.BodySm style={{ color: theme.colors.status.danger }}>{error}</Text.BodySm> : null}
+              {error ? <Banner message={error} /> : null}
 
               <Button
                 title={mode === 'login' ? 'Zaloguj się' : 'Zarejestruj się'}

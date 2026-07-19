@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Quill from 'quill';
 import 'quill/dist/quill.snow.css';
+import { theme } from '../theme';
 
 /**
  * Web-only rich text editor built on Quill, so formatting is true WYSIWYG and
@@ -117,17 +118,19 @@ export function RichNoteEditor({ value, onChangeText, placeholder }: RichNoteEdi
 }
 
 // Layout glue so the Quill container fills the card (and the whole screen in
-// fullscreen). Injected once.
+// fullscreen). Injected once. Quill's own DOM/classes are untouched — only
+// the color/spacing *values* below are pulled from theme tokens, interpolated
+// into the CSS string since theme values are TS constants, not CSS variables.
 const globalCss = `
 .rne-root { position: relative; display: flex; flex-direction: column; }
 .rne-root .ql-toolbar.ql-snow {
   border: none;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid ${theme.colors.border.default};
   padding-right: 44px; /* room for the fullscreen button */
 }
-.rne-root .ql-container.ql-snow { border: none; font-size: 14px; }
+.rne-root .ql-container.ql-snow { border: none; font-size: ${theme.font.size.bodySm}px; }
 .rne-root .ql-editor { min-height: 150px; }
-.rne-root .ql-editor.ql-blank::before { color: #9ca3af; font-style: normal; }
+.rne-root .ql-editor.ql-blank::before { color: ${theme.colors.text.tertiary}; font-style: normal; }
 .rne-overlay .ql-container.ql-snow { flex: 1; overflow-y: auto; }
 .rne-overlay .ql-editor { min-height: 100%; }
 `;
@@ -141,16 +144,16 @@ if (typeof document !== 'undefined' && !document.getElementById('rne-global-css'
 
 const styles: Record<string, React.CSSProperties> = {
   wrapper: {
-    border: '1px solid #ddd',
-    borderRadius: 12,
+    border: `1px solid ${theme.colors.border.default}`,
+    borderRadius: theme.radius.md,
     overflow: 'hidden',
-    background: 'white',
+    background: theme.colors.surface.card,
   },
   overlay: {
     position: 'fixed',
     inset: 0,
     zIndex: 1000,
-    background: 'white',
+    background: theme.colors.surface.card,
   },
   fullscreenButton: {
     position: 'absolute',
@@ -158,10 +161,10 @@ const styles: Record<string, React.CSSProperties> = {
     right: 8,
     width: 30,
     height: 30,
-    borderRadius: 8,
+    borderRadius: theme.radius.sm,
     border: 'none',
-    background: '#f2f4f7',
-    color: '#374151',
+    background: theme.colors.surface.sunken,
+    color: theme.colors.text.secondary,
     fontSize: 15,
     cursor: 'pointer',
     zIndex: 2,

@@ -38,6 +38,65 @@ export interface FlashcardDto {
   difficulty: Difficulty;
 }
 
+// Anki-style four-button grades and scheduling shapes.
+export type ReviewGrade = 'again' | 'hard' | 'good' | 'easy';
+export type CardPhase = 'New' | 'Learning' | 'Review' | 'Relearning';
+
+// Pre-formatted next-interval labels per grade (e.g. "10 min", "3 dni").
+export interface IntervalPreview {
+  again: string;
+  hard: string;
+  good: string;
+  easy: string;
+}
+
+// A flashcard enriched with the projected intervals for each grade button.
+export interface DailyCardDto extends FlashcardDto {
+  phase: CardPhase;
+  intervals: IntervalPreview;
+}
+
+export interface DailyResponse {
+  dueCount: number;
+  newAvailable: number;
+  newLimit: number;
+  nextDueAt: string | null;
+  cards: DailyCardDto[];
+}
+
+export interface DailySummary {
+  dueCount: number;
+  newAvailable: number;
+  newLimit: number;
+  dailySessionSize: number;
+}
+
+export interface ReviewResult {
+  phase: CardPhase;
+  due: string;
+  intervalDays: number;
+  lapses: number;
+  intervals: IntervalPreview;
+}
+
+// Mirrors the backend SrsSettingsDto (all user-tunable scheduler knobs).
+export interface SrsSettings {
+  dailySessionSize: number;
+  newCardsPerDay: number;
+  learningStepsMinutes: string;
+  relearningStepsMinutes: string;
+  graduatingIntervalDays: number;
+  easyIntervalDays: number;
+  startingEase: number;
+  easyBonus: number;
+  hardMultiplier: number;
+  lapseNewIntervalMultiplier: number;
+  minimumIntervalDays: number;
+  maximumIntervalDays: number;
+  timezone: string;
+  dayRolloverHour: number;
+}
+
 export interface DeckDto {
   id: string;
   name: string;

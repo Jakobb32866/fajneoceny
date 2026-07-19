@@ -32,6 +32,32 @@ jeszcze skonfigurowane.").
       client IDs, fill in `GOOGLE_OAUTH_CLIENT_IDS.ios` / `.android`, and add
       both IDs to the backend's `Google.ClientIds` allow-list.
 
+## Expo Go on a physical device
+
+Working, but needs one machine-specific setting:
+
+- [ ] `.env` at the repo root sets `LAN_IP` (the host's LAN address), which
+      compose passes to Expo as `REACT_NATIVE_PACKAGER_HOSTNAME`. It is
+      gitignored, so each dev has to create their own — and it must be updated
+      whenever DHCP hands out a new address or you switch networks. If Expo Go
+      can't connect, re-check this first (`ipconfig getifaddr en0`).
+
+## Spaced repetition follow-ups (from the Anki-scheduler plan, not blocking)
+
+The Anki-style scheduler, per-user SRS settings, daily/extra queues and the
+Settings screen are implemented. Deferred enhancements:
+
+- [ ] **Push notifications**: wire `expo-notifications` to fire a morning
+      reminder with the due count (the dashboard badge is the only "notifier"
+      today). Needs notification permissions + a scheduled local notification
+      keyed off `GET /api/flashcards/daily/summary`.
+- [ ] **Leech tagging**: flag/suspend cards once `Lapses` crosses a threshold
+      (Anki's default is 8) so chronically-failed cards stop dominating reviews.
+      `SpacedRepetitionState.Lapses` is already tracked.
+- [ ] **FSRS**: once enough review history accrues, offer FSRS as an alternate
+      `ISpacedRepetitionService` implementation (the interface is already the
+      seam) with a per-user opt-in in `UserSrsSettings`.
+
 ## Auth follow-ups (from the original implementation plan, not blocking)
 
 - [ ] Tighten CORS from `AllowAnyOrigin` to the known app origins now that

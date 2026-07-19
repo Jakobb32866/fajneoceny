@@ -49,10 +49,25 @@ services:
     entrypoint: ["ollama", "pull", "qwen2.5:3b"]
     restart: "no"
 
-  # Expo dev server — web build only, viewable at http://localhost:8081.
+  # Expo dev server. Web build at http://localhost:8081, and the native bundle
+  # that Expo Go connects to over the LAN.
+  #
+  # LAN_IP must be your host machine's LAN address (e.g. 192.168.1.17) — find
+  # it with `ipconfig getifaddr en0` on macOS or `hostname -I` on Linux. Expo
+  # advertises this to the phone instead of the unreachable container IP, and
+  # mobile-app/src/api/config.ts reuses it to reach backend-api on :8080.
+  # Set it in a .env file next to this compose file: LAN_IP=192.168.1.17
   mobile-app:
     build:
       context: ./mobile-app
+    environment:
+      REACT_NATIVE_PACKAGER_HOSTNAME: ${LAN_IP:?set LAN_IP to your host LAN address, e.g. LAN_IP=192.168.1.17}
+    volumes:
+      # Live-reload edits from the host. The anonymous volume keeps the
+      # container's own node_modules (installed for linux) from being shadowed
+      # by the host's macOS-built one.
+      - ./mobile-app:/app
+      - /app/node_modules
     ports:
       - "8081:8081"
       - "19000:19000"

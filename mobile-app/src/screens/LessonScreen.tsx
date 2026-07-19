@@ -1,25 +1,23 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { useFocusEffect } from '@react-navigation/native';
+import { useEffect, useRef, useState } from 'react';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import * as DocumentPicker from 'expo-document-picker';
-import {
-  ActivityIndicator,
-  Alert,
-  Linking,
-  Modal,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Alert, Linking, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { getCached, invalidate, setCached } from '../api/cache';
+import { cacheKeys } from '../api/cacheKeys';
 import { api } from '../api/client';
+import { useCachedQuery } from '../hooks/useCachedQuery';
 import { RichNoteEditor } from '../components/RichNoteEditor';
+import { Badge } from '../components/ui/Badge';
+import { Button } from '../components/ui/Button';
+import { Card } from '../components/ui/Card';
+import { Chip } from '../components/ui/Chip';
+import { ModalSheet } from '../components/ui/ModalSheet';
+import { TextField } from '../components/ui/Input';
+import { Text } from '../components/ui/Text';
+import { theme } from '../theme';
 import { confirmAsync } from '../utils/confirm';
 import type { RootStackParamList } from '../navigation/types';
-import type { Difficulty, LessonDetail } from '../api/types';
+import type { Difficulty, LessonDetail, SourceType } from '../api/types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Lesson'>;
 
@@ -28,6 +26,12 @@ const DIFFICULTIES: { value: Difficulty; label: string }[] = [
   { value: 'Medium', label: 'Średni' },
   { value: 'Hard', label: 'Ciężki' },
 ];
+
+const SOURCE_TYPE_LABEL: Record<SourceType, string> = {
+  Pdf: 'PDF',
+  YoutubeLink: 'YouTube',
+  Link: 'Link',
+};
 
 /** Polish plural for "fiszka" (card): 1 fiszka, 2–4 fiszki, 5+ fiszek. */
 function cardWord(n: number): string {
@@ -40,27 +44,40 @@ function cardWord(n: number): string {
 
 export function LessonScreen({ route, navigation }: Props) {
   const { lessonId, lessonTitle } = route.params;
-  const [lesson, setLesson] = useState<LessonDetail | null>(null);
   const [noteText, setNoteText] = useState('');
   const [quizModalVisible, setQuizModalVisible] = useState(false);
   const [addLinkVisible, setAddLinkVisible] = useState(false);
   const [generating, setGenerating] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const load = useCallback(() => {
-    api.getLesson(lessonId).then((l) => {
-      setLesson(l);
-      setNoteText(l.noteContent ?? '');
-    });
-  }, [lessonId]);
+  const lessonKey = cacheKeys.lesson(lessonId);
+  const { data: lesson } = useCachedQuery<LessonDetail>(lessonKey, () => api.getLesson(lessonId));
+  const reloadLesson = () => invalidate(lessonKey);
 
-  useFocusEffect(load);
+  // Seed the editor from the server exactly once per mount. Re-seeding on a
+  // background revalidation would drop whatever the student typed in the 800ms
+  // before the debounced save fires.
+  const seeded = useRef(false);
+  useEffect(() => {
+    if (lesson && !seeded.current) {
+      seeded.current = true;
+      setNoteText(lesson.noteContent ?? '');
+    }
+  }, [lesson]);
 
   const onChangeNote = (text: string) => {
     setNoteText(text);
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
-      api.saveNote(lessonId, text).catch(() => {});
+      api
+        .saveNote(lessonId, text)
+        .then(() => {
+          // Write through instead of invalidating: the note we just saved is
+          // the freshest copy, and a refetch here could race the next keystroke.
+          const cached = getCached<LessonDetail>(lessonKey);
+          if (cached) setCached(lessonKey, { ...cached, noteContent: text });
+        })
+        .catch(() => {});
     }, 800);
   };
 
@@ -73,7 +90,7 @@ export function LessonScreen({ route, navigation }: Props) {
     if (result.canceled) return;
     const file = result.assets[0];
     await api.addFileSource(lessonId, { uri: file.uri, name: file.name, mimeType: file.mimeType });
-    load();
+    reloadLesson();
   };
 
   const createQuiz = async (count: number, difficulty: Difficulty) => {
@@ -81,19 +98,22 @@ export function LessonScreen({ route, navigation }: Props) {
     setGenerating(true);
     try {
       const deck = await api.createQuiz(lessonId, count, difficulty);
-      load();
       navigation.navigate('QuizPlayer', { title: deck.name, cards: deck.flashcards });
     } catch (e) {
       Alert.alert('Nie udało się utworzyć quizu', String(e));
     } finally {
       setGenerating(false);
-      load();
+      // New cards change the lesson's deck list, the subject's flashcardCount
+      // and the daily pool.
+      reloadLesson();
+      invalidate(cacheKeys.dailySummary);
     }
   };
 
   const createEmptyDeck = async () => {
     try {
       const deck = await api.createDeck(lessonId);
+      reloadLesson();
       navigation.navigate('DeckEditor', { deckId: deck.id, lessonId });
     } catch (e) {
       Alert.alert('Nie udało się utworzyć talii', String(e));
@@ -102,53 +122,54 @@ export function LessonScreen({ route, navigation }: Props) {
 
   const removeDeck = async (deckId: string, name: string) => {
     const ok = await confirmAsync('Usunąć talię?', `„${name}" i jej fiszki zostaną usunięte.`);
-    if (ok) api.deleteDeck(deckId).then(load);
+    if (ok) api.deleteDeck(deckId).then(reloadLesson);
   };
 
   if (!lesson) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator />
+        <ActivityIndicator color={theme.colors.accent.default} />
       </View>
     );
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ padding: 16, gap: 20 }}>
-      <Text style={styles.title}>{lesson.title}</Text>
+    <ScrollView style={styles.container} contentContainerStyle={{ padding: theme.spacing[4], gap: theme.spacing[5] }}>
+      <Text.HeadlineLg>{lesson.title}</Text.HeadlineLg>
 
       <View>
-        <Text style={styles.sectionTitle}>Notatki</Text>
+        <Text.Title style={styles.sectionTitle}>Notatki</Text.Title>
         <RichNoteEditor value={noteText} onChangeText={onChangeNote} placeholder="Pisz notatki z zajęć…" />
       </View>
 
       <View>
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Źródła</Text>
-          <View style={{ flexDirection: 'row', gap: 12 }}>
+          <Text.Title>Źródła</Text.Title>
+          <View style={{ flexDirection: 'row', gap: theme.spacing[3] }}>
             <TouchableOpacity onPress={() => setAddLinkVisible(true)}>
-              <Text style={styles.linkAction}>+ link</Text>
+              <Text.BodySm style={styles.linkAction}>+ link</Text.BodySm>
             </TouchableOpacity>
             <TouchableOpacity onPress={pickPdfSource}>
-              <Text style={styles.linkAction}>+ PDF</Text>
+              <Text.BodySm style={styles.linkAction}>+ PDF</Text.BodySm>
             </TouchableOpacity>
           </View>
         </View>
 
         {lesson.sources.length === 0 ? (
-          <Text style={styles.empty}>Brak źródeł</Text>
+          <Text.BodySm style={styles.empty}>Brak źródeł</Text.BodySm>
         ) : (
           lesson.sources.map((s) => (
             <TouchableOpacity
               key={s.id}
               style={styles.sourceRow}
               onPress={() => s.type !== 'Pdf' && Linking.openURL(s.location)}
-              onLongPress={() => api.deleteSource(s.id).then(load)}
+              onLongPress={() => api.deleteSource(s.id).then(reloadLesson)}
             >
-              <Text style={styles.sourceIcon}>{s.type === 'Pdf' ? '📄' : '🔗'}</Text>
-              <Text style={styles.sourceTitle} numberOfLines={1}>
+              <Text.Body>{s.type === 'Pdf' ? '📄' : '🔗'}</Text.Body>
+              <Text.Body style={styles.sourceTitle} numberOfLines={1}>
                 {s.title}
-              </Text>
+              </Text.Body>
+              <Badge label={SOURCE_TYPE_LABEL[s.type]} variant="neutral" />
             </TouchableOpacity>
           ))
         )}
@@ -156,54 +177,56 @@ export function LessonScreen({ route, navigation }: Props) {
 
       <View>
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Talie fiszek ({lesson.decks.length})</Text>
+          <Text.Title>Talie fiszek ({lesson.decks.length})</Text.Title>
         </View>
 
         {lesson.decks.length === 0 ? (
-          <Text style={styles.empty}>Brak talii — wygeneruj quiz lub utwórz talię ręcznie.</Text>
+          <Text.BodySm style={styles.empty}>Brak talii — wygeneruj quiz lub utwórz talię ręcznie.</Text.BodySm>
         ) : (
           lesson.decks.map((deck) => (
-            <View key={deck.id} style={styles.deckCard}>
+            <Card key={deck.id} style={styles.deckCard}>
               <View style={styles.deckInfo}>
-                <Text style={styles.deckName} numberOfLines={1}>
+                <Text.Body style={styles.deckName} numberOfLines={1}>
                   {deck.isAiGenerated ? '✨ ' : '✍️ '}
                   {deck.name}
-                </Text>
-                <Text style={styles.deckMeta}>
+                </Text.Body>
+                <Text.BodySm>
                   {deck.flashcards.length} {cardWord(deck.flashcards.length)}
-                </Text>
+                </Text.BodySm>
               </View>
               <View style={styles.deckActions}>
                 <TouchableOpacity
                   disabled={deck.flashcards.length === 0}
                   onPress={() => navigation.navigate('QuizPlayer', { title: deck.name, cards: deck.flashcards })}
                 >
-                  <Text style={[styles.deckAction, deck.flashcards.length === 0 && styles.deckActionDisabled]}>
+                  <Text.BodySm style={[styles.deckAction, deck.flashcards.length === 0 && styles.deckActionDisabled]}>
                     ▶ Powtórz
-                  </Text>
+                  </Text.BodySm>
                 </TouchableOpacity>
                 <TouchableOpacity onPress={() => navigation.navigate('DeckEditor', { deckId: deck.id, lessonId })}>
-                  <Text style={styles.deckAction}>Edytuj</Text>
+                  <Text.BodySm style={styles.deckAction}>Edytuj</Text.BodySm>
                 </TouchableOpacity>
                 <TouchableOpacity onPress={() => removeDeck(deck.id, deck.name)}>
-                  <Text style={[styles.deckAction, styles.deckActionDanger]}>Usuń</Text>
+                  <Text.BodySm style={[styles.deckAction, styles.deckActionDanger]}>Usuń</Text.BodySm>
                 </TouchableOpacity>
               </View>
-            </View>
+            </Card>
           ))
         )}
 
         <View style={styles.deckCreateRow}>
-          <TouchableOpacity
-            style={[styles.generateButton, styles.deckCreateButton]}
-            disabled={generating}
-            onPress={() => setQuizModalVisible(true)}
-          >
-            <Text style={styles.generateButtonText}>{generating ? 'Generuję…' : '✨ Wygeneruj quiz (AI)'}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.newDeckButton, styles.deckCreateButton]} onPress={createEmptyDeck}>
-            <Text style={styles.newDeckButtonText}>+ Nowa talia</Text>
-          </TouchableOpacity>
+          <View style={styles.deckCreateButton}>
+            <Button
+              title={generating ? 'Generuję…' : '✨ Wygeneruj quiz (AI)'}
+              onPress={() => setQuizModalVisible(true)}
+              disabled={generating}
+              loading={generating}
+              fullWidth
+            />
+          </View>
+          <View style={styles.deckCreateButton}>
+            <Button title="+ Nowa talia" variant="ghost" onPress={createEmptyDeck} fullWidth />
+          </View>
         </View>
       </View>
 
@@ -218,7 +241,7 @@ export function LessonScreen({ route, navigation }: Props) {
         onSubmit={async (title, url, type) => {
           await api.addLinkSource(lessonId, title, url, type);
           setAddLinkVisible(false);
-          load();
+          reloadLesson();
         }}
       />
     </ScrollView>
@@ -238,33 +261,23 @@ function QuizConfigModal({
   const [difficulty, setDifficulty] = useState<Difficulty>('Medium');
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.modalOverlay} onPress={onClose}>
-        <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
-          <Text style={styles.modalTitle}>Nowy quiz</Text>
-          <Text style={styles.modalLabel}>Liczba pytań</Text>
-          <TextInput style={styles.input} keyboardType="numeric" value={count} onChangeText={setCount} />
-          <Text style={styles.modalLabel}>Trudność</Text>
-          <View style={styles.chipRow}>
-            {DIFFICULTIES.map((d) => (
-              <TouchableOpacity
-                key={d.value}
-                style={[styles.chip, difficulty === d.value && styles.chipSelected]}
-                onPress={() => setDifficulty(d.value)}
-              >
-                <Text style={difficulty === d.value ? styles.chipTextSelected : styles.chipText}>{d.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-          <TouchableOpacity
-            style={styles.submitButton}
-            onPress={() => Number(count) > 0 && onSubmit(Number(count), difficulty)}
-          >
-            <Text style={styles.submitText}>Generuj</Text>
-          </TouchableOpacity>
-        </Pressable>
-      </Pressable>
-    </Modal>
+    <ModalSheet visible={visible} onClose={onClose} title="Nowy quiz">
+      <TextField label="Liczba pytań" keyboardType="numeric" value={count} onChangeText={setCount} />
+      <View style={{ gap: theme.spacing[2] }}>
+        <Text.Caption>Trudność</Text.Caption>
+        <View style={styles.chipRow}>
+          {DIFFICULTIES.map((d) => (
+            <Chip key={d.value} label={d.label} selected={difficulty === d.value} onPress={() => setDifficulty(d.value)} />
+          ))}
+        </View>
+      </View>
+      <Button
+        title="Generuj"
+        onPress={() => Number(count) > 0 && onSubmit(Number(count), difficulty)}
+        disabled={!(Number(count) > 0)}
+        fullWidth
+      />
+    </ModalSheet>
   );
 }
 
@@ -284,72 +297,41 @@ function AddLinkModal({
     /youtube\.com|youtu\.be/.test(u) ? 'YoutubeLink' : 'Link';
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.modalOverlay} onPress={onClose}>
-        <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
-          <Text style={styles.modalTitle}>Nowe źródło (link)</Text>
-          <TextInput style={styles.input} placeholder="Tytuł" value={title} onChangeText={setTitle} />
-          <TextInput
-            style={styles.input}
-            placeholder="https://…"
-            autoCapitalize="none"
-            value={url}
-            onChangeText={setUrl}
-          />
-          <TouchableOpacity
-            style={styles.submitButton}
-            onPress={() => title.trim() && url.trim() && onSubmit(title.trim(), url.trim(), guessType(url))}
-          >
-            <Text style={styles.submitText}>Dodaj</Text>
-          </TouchableOpacity>
-        </Pressable>
-      </Pressable>
-    </Modal>
+    <ModalSheet visible={visible} onClose={onClose} title="Nowe źródło (link)">
+      <TextField placeholder="Tytuł" value={title} onChangeText={setTitle} />
+      <TextField placeholder="https://…" autoCapitalize="none" value={url} onChangeText={setUrl} />
+      <Button
+        title="Dodaj"
+        onPress={() => title.trim() && url.trim() && onSubmit(title.trim(), url.trim(), guessType(url))}
+        disabled={!(title.trim() && url.trim())}
+        fullWidth
+      />
+    </ModalSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: 'white' },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  title: { fontSize: 22, fontWeight: '700' },
-  sectionTitle: { fontSize: 16, fontWeight: '700', marginBottom: 8 },
-  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  linkAction: { color: '#2563eb', fontWeight: '600' },
-  empty: { color: '#999' },
-  sourceRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8 },
-  sourceIcon: { fontSize: 16 },
-  sourceTitle: { flex: 1, fontSize: 14 },
-  deckCard: {
-    borderWidth: 1,
-    borderColor: '#eee',
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 8,
-    gap: 8,
+  container: { flex: 1, backgroundColor: theme.colors.surface.app },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.colors.surface.app },
+  sectionTitle: { marginBottom: theme.spacing[2] },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: theme.spacing[2],
   },
+  linkAction: { color: theme.colors.text.link, fontFamily: theme.font.family.sansSemibold },
+  empty: { color: theme.colors.text.tertiary },
+  sourceRow: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing[2], paddingVertical: theme.spacing[2] },
+  sourceTitle: { flex: 1 },
+  deckCard: { gap: theme.spacing[2], marginBottom: theme.spacing[2] },
   deckInfo: { gap: 2 },
-  deckName: { fontSize: 15, fontWeight: '700', color: '#111827' },
-  deckMeta: { fontSize: 12, color: '#6b7280' },
-  deckActions: { flexDirection: 'row', gap: 18, alignItems: 'center' },
-  deckAction: { fontSize: 13, fontWeight: '600', color: '#2563eb' },
-  deckActionDisabled: { color: '#9ca3af' },
-  deckActionDanger: { color: '#dc2626' },
-  deckCreateRow: { flexDirection: 'row', gap: 8, marginTop: 4 },
+  deckName: { fontFamily: theme.font.family.sansSemibold },
+  deckActions: { flexDirection: 'row', gap: theme.spacing[4], alignItems: 'center' },
+  deckAction: { color: theme.colors.text.link, fontFamily: theme.font.family.sansSemibold },
+  deckActionDisabled: { color: theme.colors.text.tertiary },
+  deckActionDanger: { color: theme.colors.status.danger },
+  deckCreateRow: { flexDirection: 'row', gap: theme.spacing[2], marginTop: theme.spacing[1] },
   deckCreateButton: { flex: 1 },
-  generateButton: { backgroundColor: '#111827', borderRadius: 12, padding: 14 },
-  generateButtonText: { color: 'white', fontWeight: '700', textAlign: 'center' },
-  newDeckButton: { backgroundColor: '#eef2ff', borderRadius: 12, padding: 14 },
-  newDeckButtonText: { color: '#3730a3', fontWeight: '700', textAlign: 'center' },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', padding: 24 },
-  modalCard: { backgroundColor: 'white', borderRadius: 16, padding: 20, gap: 10 },
-  modalTitle: { fontSize: 17, fontWeight: '700', marginBottom: 4 },
-  modalLabel: { fontSize: 12, color: '#666' },
-  input: { borderWidth: 1, borderColor: '#ddd', borderRadius: 8, padding: 10, fontSize: 14 },
-  chipRow: { flexDirection: 'row', gap: 8 },
-  chip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, backgroundColor: '#f2f4f7' },
-  chipSelected: { backgroundColor: '#111827' },
-  chipText: { fontSize: 12, color: '#333' },
-  chipTextSelected: { fontSize: 12, color: 'white' },
-  submitButton: { backgroundColor: '#111827', borderRadius: 10, paddingVertical: 12, alignItems: 'center', marginTop: 4 },
-  submitText: { color: 'white', fontWeight: '700' },
+  chipRow: { flexDirection: 'row', gap: theme.spacing[2] },
 });

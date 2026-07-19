@@ -1,20 +1,27 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { useFocusEffect } from '@react-navigation/native';
+import { useEffect, useRef, useState } from 'react';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import {
   ActivityIndicator,
   Alert,
+  Pressable,
   ScrollView,
   StyleSheet,
-  Text,
   TextInput,
-  TouchableOpacity,
   useWindowDimensions,
   View,
 } from 'react-native';
+import { invalidate } from '../api/cache';
+import { cacheKeys } from '../api/cacheKeys';
 import { api } from '../api/client';
+import { useCachedQuery } from '../hooks/useCachedQuery';
 import { confirmAsync } from '../utils/confirm';
-import type { Difficulty, FlashcardDto } from '../api/types';
+import { Button } from '../components/ui/Button';
+import { Card } from '../components/ui/Card';
+import { Chip } from '../components/ui/Chip';
+import { TextField } from '../components/ui/Input';
+import { Text } from '../components/ui/Text';
+import { theme } from '../theme';
+import type { Difficulty, FlashcardDto, LessonDetail } from '../api/types';
 import type { RootStackParamList } from '../navigation/types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'DeckEditor'>;
@@ -36,7 +43,6 @@ export function DeckEditorScreen({ route, navigation }: Props) {
   const { width } = useWindowDimensions();
   const isWide = width >= 720;
 
-  const [loading, setLoading] = useState(true);
   const [name, setName] = useState('');
   const [cards, setCards] = useState<FlashcardDto[]>([]);
   const [index, setIndex] = useState(0);
@@ -44,48 +50,53 @@ export function DeckEditorScreen({ route, navigation }: Props) {
   const cardTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const nameTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const questionRef = useRef<TextInput>(null);
+  /** Set by any edit, so unmount knows whether other screens need refreshing. */
+  const dirty = useRef(false);
 
-  const load = useCallback(() => {
-    setLoading(true);
-    api
-      .getLesson(lessonId)
-      .then((lesson) => {
-        const deck = lesson.decks.find((d) => d.id === deckId);
-        if (!deck) {
-          Alert.alert('Talia nie istnieje');
-          navigation.goBack();
-          return;
-        }
-        setName(deck.name);
-        setCards(deck.flashcards);
-        navigation.setOptions({ title: deck.name });
-        setIndex((i) => Math.min(i, Math.max(0, deck.flashcards.length - 1)));
-      })
-      .finally(() => setLoading(false));
-  }, [deckId, lessonId, navigation]);
-
-  // Only load on first focus; re-focusing after edits shouldn't clobber unsaved
-  // local state, so we guard with a ref.
-  const loadedOnce = useRef(false);
-  useFocusEffect(
-    useCallback(() => {
-      if (!loadedOnce.current) {
-        loadedOnce.current = true;
-        load();
-      }
-    }, [load]),
+  // Shares the lesson/{id} cache entry with LessonScreen, so arriving from
+  // there costs no request at all.
+  const { data: lesson, loading } = useCachedQuery<LessonDetail>(cacheKeys.lesson(lessonId), () =>
+    api.getLesson(lessonId),
   );
+
+  // Seed local state once. After that local state is authoritative — writes are
+  // debounced and fire-and-forget, so re-seeding would clobber unsaved edits.
+  const seeded = useRef(false);
+  useEffect(() => {
+    if (!lesson || seeded.current) return;
+    seeded.current = true;
+
+    const deck = lesson.decks.find((d) => d.id === deckId);
+    if (!deck) {
+      Alert.alert('Talia nie istnieje');
+      navigation.goBack();
+      return;
+    }
+    setName(deck.name);
+    setCards(deck.flashcards);
+    navigation.setOptions({ title: deck.name });
+    setIndex((i) => Math.min(i, Math.max(0, deck.flashcards.length - 1)));
+  }, [lesson, deckId, navigation]);
 
   useEffect(
     () => () => {
       Object.values(cardTimers.current).forEach(clearTimeout);
       if (nameTimer.current) clearTimeout(nameTimer.current);
+      // Invalidate on the way out, not per keystroke: this screen subscribes to
+      // the same cache key, so invalidating mid-edit would trigger a refetch of
+      // its own data on every debounced save.
+      if (dirty.current) {
+        invalidate(cacheKeys.lesson(lessonId));
+        invalidate(cacheKeys.subjects);
+        invalidate(cacheKeys.dailySummary);
+      }
     },
-    [],
+    [lessonId],
   );
 
   const onChangeName = (text: string) => {
     setName(text);
+    dirty.current = true;
     navigation.setOptions({ title: text || 'Edycja talii' });
     if (nameTimer.current) clearTimeout(nameTimer.current);
     nameTimer.current = setTimeout(() => {
@@ -94,6 +105,7 @@ export function DeckEditorScreen({ route, navigation }: Props) {
   };
 
   const scheduleCardSave = (card: FlashcardDto) => {
+    dirty.current = true;
     if (cardTimers.current[card.id]) clearTimeout(cardTimers.current[card.id]);
     cardTimers.current[card.id] = setTimeout(() => {
       api.updateCard(card.id, card.question, card.answer, card.difficulty).catch(() => {});
@@ -113,6 +125,7 @@ export function DeckEditorScreen({ route, navigation }: Props) {
   const addCard = async () => {
     try {
       const created = await api.addCard(deckId, '', '', 'Medium');
+      dirty.current = true;
       setCards((prev) => {
         const next = [...prev, created];
         setIndex(next.length - 1);
@@ -130,6 +143,7 @@ export function DeckEditorScreen({ route, navigation }: Props) {
     const ok = await confirmAsync('Usunąć fiszkę?', 'Tej operacji nie można cofnąć.');
     if (!ok) return;
     if (cardTimers.current[card.id]) clearTimeout(cardTimers.current[card.id]);
+    dirty.current = true;
     api.deleteCard(card.id).catch(() => {});
     setCards((prev) => {
       const next = prev.filter((c) => c.id !== card.id);
@@ -149,112 +163,107 @@ export function DeckEditorScreen({ route, navigation }: Props) {
   const current = cards[index];
 
   const cardList = (
-    <ScrollView style={isWide ? styles.sidePanel : styles.bottomPanel} contentContainerStyle={{ padding: 8, gap: 6 }}>
-      <Text style={styles.panelHeader}>Fiszki ({cards.length})</Text>
+    <ScrollView
+      style={isWide ? styles.sidePanel : styles.bottomPanel}
+      contentContainerStyle={{ padding: theme.spacing[2], gap: theme.spacing[2] }}
+    >
+      <Text.Caption style={{ paddingHorizontal: theme.spacing[1], paddingVertical: theme.spacing[1] }}>
+        Fiszki ({cards.length})
+      </Text.Caption>
       {cards.map((c, i) => (
-        <TouchableOpacity
+        <Pressable
           key={c.id}
           style={[styles.panelItem, i === index && styles.panelItemActive]}
           onPress={() => setIndex(i)}
         >
-          <Text style={styles.panelIndex}>{i + 1}.</Text>
+          <Text.BodySm style={{ color: theme.colors.text.tertiary, fontFamily: theme.font.family.sansSemibold }}>
+            {i + 1}.
+          </Text.BodySm>
           <View style={{ flex: 1 }}>
-            <Text style={styles.panelQuestion} numberOfLines={1}>
+            <Text.BodySm style={{ fontFamily: theme.font.family.sansSemibold }} numberOfLines={1}>
               {excerpt(c.question, '(brak pytania)')}
-            </Text>
-            <Text style={styles.panelAnswer} numberOfLines={1}>
-              {excerpt(c.answer, '(brak odpowiedzi)')}
-            </Text>
+            </Text.BodySm>
+            <Text.Caption numberOfLines={1}>{excerpt(c.answer, '(brak odpowiedzi)')}</Text.Caption>
           </View>
-        </TouchableOpacity>
+        </Pressable>
       ))}
-      <TouchableOpacity style={styles.panelAddButton} onPress={addCard}>
-        <Text style={styles.panelAddText}>+ Dodaj fiszkę</Text>
-      </TouchableOpacity>
+      <Button title="+ Dodaj fiszkę" variant="ghost" onPress={addCard} fullWidth />
     </ScrollView>
   );
 
   const editor = (
     <View style={styles.editorPane}>
-      <View style={styles.deckNameRow}>
-        <Text style={styles.label}>Nazwa talii</Text>
-        <TextInput style={styles.deckNameInput} value={name} onChangeText={onChangeName} placeholder="Nazwa talii" />
-      </View>
+      <TextField label="Nazwa talii" value={name} onChangeText={onChangeName} placeholder="Nazwa talii" />
 
       {current ? (
-        <ScrollView contentContainerStyle={{ gap: 14, paddingBottom: 24 }}>
+        <ScrollView contentContainerStyle={{ gap: theme.spacing[4], paddingTop: theme.spacing[3], paddingBottom: 24 }}>
           <View style={styles.navRow}>
-            <TouchableOpacity
+            <Button
+              title="‹"
+              variant="ghost"
+              size="sm"
               disabled={index === 0}
               onPress={() => setIndex((i) => Math.max(0, i - 1))}
-              style={styles.navButton}
-            >
-              <Text style={[styles.navArrow, index === 0 && styles.navArrowDisabled]}>‹</Text>
-            </TouchableOpacity>
-            <Text style={styles.navPosition}>
+            />
+            <Text.BodySm style={{ color: theme.colors.text.secondary, fontFamily: theme.font.family.sansSemibold, minWidth: 64, textAlign: 'center' }}>
               {index + 1} / {cards.length}
-            </Text>
-            <TouchableOpacity
+            </Text.BodySm>
+            <Button
+              title="›"
+              variant="ghost"
+              size="sm"
               disabled={index >= cards.length - 1}
               onPress={() => setIndex((i) => Math.min(cards.length - 1, i + 1))}
-              style={styles.navButton}
-            >
-              <Text style={[styles.navArrow, index >= cards.length - 1 && styles.navArrowDisabled]}>›</Text>
-            </TouchableOpacity>
+            />
           </View>
 
-          <View style={styles.faceCard}>
-            <Text style={styles.faceLabel}>PYTANIE (przód)</Text>
+          <Card>
+            <Text.Caption style={{ letterSpacing: 0.5 }}>PYTANIE (przód)</Text.Caption>
             <TextInput
               ref={questionRef}
               style={styles.faceInput}
               multiline
               placeholder="Treść pytania…"
+              placeholderTextColor={theme.colors.text.tertiary}
               value={current.question}
               onChangeText={(t) => updateCurrent({ question: t })}
               textAlignVertical="top"
             />
-          </View>
+          </Card>
 
-          <View style={styles.faceCard}>
-            <Text style={styles.faceLabel}>ODPOWIEDŹ (tył)</Text>
+          <Card>
+            <Text.Caption style={{ letterSpacing: 0.5 }}>ODPOWIEDŹ (tył)</Text.Caption>
             <TextInput
               style={styles.faceInput}
               multiline
               placeholder="Treść odpowiedzi…"
+              placeholderTextColor={theme.colors.text.tertiary}
               value={current.answer}
               onChangeText={(t) => updateCurrent({ answer: t })}
               textAlignVertical="top"
             />
-          </View>
+          </Card>
 
-          <View style={styles.difficultyRow}>
-            <Text style={styles.label}>Trudność</Text>
-            <View style={styles.chipRow}>
+          <View style={{ gap: theme.spacing[2] }}>
+            <Text.Caption style={{ color: theme.colors.text.secondary }}>Trudność</Text.Caption>
+            <View style={{ flexDirection: 'row', gap: theme.spacing[2] }}>
               {DIFFICULTIES.map((d) => (
-                <TouchableOpacity
+                <Chip
                   key={d.value}
-                  style={[styles.chip, current.difficulty === d.value && styles.chipSelected]}
+                  label={d.label}
+                  selected={current.difficulty === d.value}
                   onPress={() => updateCurrent({ difficulty: d.value })}
-                >
-                  <Text style={current.difficulty === d.value ? styles.chipTextSelected : styles.chipText}>
-                    {d.label}
-                  </Text>
-                </TouchableOpacity>
+                />
               ))}
             </View>
           </View>
 
-          <TouchableOpacity style={styles.removeButton} onPress={removeCurrent}>
-            <Text style={styles.removeButtonText}>🗑 Usuń tę fiszkę</Text>
-          </TouchableOpacity>
+          <Button title="🗑 Usuń tę fiszkę" variant="danger" onPress={removeCurrent} fullWidth />
         </ScrollView>
       ) : (
         <View style={styles.emptyState}>
-          <Text style={styles.emptyText}>Ta talia nie ma jeszcze fiszek.</Text>
-          <TouchableOpacity style={styles.addFirstButton} onPress={addCard}>
-            <Text style={styles.addFirstText}>+ Dodaj pierwszą fiszkę</Text>
-          </TouchableOpacity>
+          <Text.Body style={{ color: theme.colors.text.secondary }}>Ta talia nie ma jeszcze fiszek.</Text.Body>
+          <Button title="+ Dodaj pierwszą fiszkę" onPress={addCard} />
         </View>
       )}
     </View>
@@ -269,82 +278,48 @@ export function DeckEditorScreen({ route, navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: 'white' },
+  container: { flex: 1, backgroundColor: theme.colors.surface.app },
   containerWide: { flexDirection: 'row' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  editorPane: { flex: 1, padding: 16 },
+  editorPane: { flex: 1, padding: theme.spacing[4] },
 
-  deckNameRow: { marginBottom: 12, gap: 4 },
-  label: { fontSize: 12, color: '#6b7280', fontWeight: '600' },
-  deckNameInput: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 10,
-    padding: 10,
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#111827',
+  navRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: theme.spacing[5] },
+
+  faceInput: {
+    minHeight: 80,
+    fontSize: theme.font.size.bodyLg,
+    fontFamily: theme.font.family.sans,
+    color: theme.colors.text.primary,
+    padding: 0,
+    marginTop: theme.spacing[1],
+    borderWidth: 0,
   },
 
-  navRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 20 },
-  navButton: { paddingHorizontal: 12 },
-  navArrow: { fontSize: 30, color: '#2563eb', lineHeight: 34 },
-  navArrowDisabled: { color: '#d1d5db' },
-  navPosition: { fontSize: 14, fontWeight: '700', color: '#374151', minWidth: 64, textAlign: 'center' },
-
-  faceCard: { borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, padding: 12, gap: 6, backgroundColor: '#fafafa' },
-  faceLabel: { fontSize: 11, fontWeight: '800', color: '#9ca3af', letterSpacing: 0.5 },
-  faceInput: { minHeight: 80, fontSize: 15, color: '#111827', padding: 0 },
-
-  difficultyRow: { gap: 6 },
-  chipRow: { flexDirection: 'row', gap: 8 },
-  chip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, backgroundColor: '#f2f4f7' },
-  chipSelected: { backgroundColor: '#111827' },
-  chipText: { fontSize: 12, color: '#333' },
-  chipTextSelected: { fontSize: 12, color: 'white' },
-
-  removeButton: { borderRadius: 10, paddingVertical: 12, alignItems: 'center', backgroundColor: '#fef2f2' },
-  removeButtonText: { color: '#dc2626', fontWeight: '700' },
-
-  emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
-  emptyText: { color: '#6b7280' },
-  addFirstButton: { backgroundColor: '#111827', borderRadius: 12, paddingVertical: 12, paddingHorizontal: 20 },
-  addFirstText: { color: 'white', fontWeight: '700' },
+  emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: theme.spacing[3] },
 
   sidePanel: {
     width: 260,
     borderLeftWidth: 1,
-    borderLeftColor: '#eee',
-    backgroundColor: '#fbfbfb',
+    borderLeftColor: theme.colors.border.default,
+    backgroundColor: theme.colors.surface.sunken,
   },
   bottomPanel: {
     maxHeight: 220,
     borderTopWidth: 1,
-    borderTopColor: '#eee',
-    backgroundColor: '#fbfbfb',
+    borderTopColor: theme.colors.border.default,
+    backgroundColor: theme.colors.surface.sunken,
   },
-  panelHeader: { fontSize: 12, fontWeight: '800', color: '#6b7280', paddingHorizontal: 4, paddingVertical: 4 },
   panelItem: {
     flexDirection: 'row',
-    gap: 8,
-    padding: 8,
-    borderRadius: 8,
-    backgroundColor: 'white',
+    gap: theme.spacing[2],
+    padding: theme.spacing[2],
+    borderRadius: theme.radius.sm,
+    backgroundColor: theme.colors.surface.card,
     borderWidth: 1,
-    borderColor: '#eee',
+    borderColor: theme.colors.border.default,
   },
-  panelItemActive: { borderColor: '#2563eb', backgroundColor: '#eff6ff' },
-  panelIndex: { fontSize: 12, color: '#9ca3af', fontWeight: '700' },
-  panelQuestion: { fontSize: 13, color: '#111827', fontWeight: '600' },
-  panelAnswer: { fontSize: 12, color: '#6b7280' },
-  panelAddButton: {
-    padding: 10,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#c7d2fe',
-    borderStyle: 'dashed',
-    alignItems: 'center',
-    marginTop: 2,
+  panelItemActive: {
+    borderColor: theme.colors.border.focus,
+    backgroundColor: theme.colors.surface.accentSoft,
   },
-  panelAddText: { color: '#3730a3', fontWeight: '700', fontSize: 13 },
 });

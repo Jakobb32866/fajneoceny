@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { api } from '../api/client';
+import { Alert, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { FlashcardPlayer } from '../components/FlashcardPlayer';
+import { Text } from '../components/ui/Text';
 import type { RootStackParamList } from '../navigation/types';
 import { exportFlashcardsAudio } from '../utils/exportAudio';
+import { theme } from '../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'QuizPlayer'>;
 
@@ -33,30 +34,24 @@ export function QuizPlayerScreen({ route, navigation }: Props) {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>{title}</Text>
+        <Text.Title>{title}</Text.Title>
         <TouchableOpacity onPress={onExportAudio} disabled={exporting}>
-          <Text style={styles.exportButton}>{exporting ? '…' : '🔊'}</Text>
+          <Text.HeadlineMd>{exporting ? '…' : '🔊'}</Text.HeadlineMd>
         </TouchableOpacity>
       </View>
 
-      <FlashcardPlayer
-        cards={cards}
-        onReview={(id, correct) => api.reviewFlashcard(id, correct).catch(() => {})}
-        onFinish={() => navigation.goBack()}
-      />
+      <FlashcardPlayer cards={cards} cram onFinish={() => navigation.goBack()} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: 'white' },
+  container: { flex: 1, backgroundColor: theme.colors.surface.app },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: 8,
+    paddingHorizontal: theme.spacing[4],
+    paddingTop: theme.spacing[2],
   },
-  title: { fontSize: 18, fontWeight: '700' },
-  exportButton: { fontSize: 22 },
 });
