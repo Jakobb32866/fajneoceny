@@ -1,30 +1,24 @@
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using BackendApi.Domain;
-using BackendApi.Services.Flashcards;
-using Microsoft.Extensions.Options;
+using BackendApi.Services.Ai;
 
 namespace BackendApi.Services.Grading;
 
 /// <summary>
-/// Extracts a grading scheme from syllabus text by calling an OpenAI-compatible
-/// chat-completions endpoint (the same local Ollama/qwen server used for
-/// flashcards). The response is constrained to a JSON object. Falls back to
-/// <see cref="HeuristicGradingSchemeExtractor"/> when no endpoint is configured
-/// or the call fails/returns nothing, so syllabus parsing never hard-fails.
+/// Extracts a grading scheme from syllabus text via an
+/// <see cref="IChatCompletionClient"/>. Falls back to the injected heuristic
+/// extractor when no LLM is configured or the call fails/returns nothing, so
+/// syllabus parsing never hard-fails.
 /// </summary>
 public class AiGradingSchemeExtractor(
-    HttpClient httpClient,
-    IOptions<AiOptions> options,
-    HeuristicGradingSchemeExtractor fallback,
+    IChatCompletionClient chatClient,
+    IGradingSchemeExtractor fallback,
     ILogger<AiGradingSchemeExtractor> logger) : IGradingSchemeExtractor
 {
-    private readonly AiOptions _options = options.Value;
-
     public async Task<List<DraftGradingComponent>> ExtractAsync(string rawText, CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(_options.BaseUrl) || string.IsNullOrWhiteSpace(rawText))
+        if (!chatClient.IsConfigured || string.IsNullOrWhiteSpace(rawText))
         {
             return await fallback.ExtractAsync(rawText, ct);
         }
@@ -56,42 +50,15 @@ public class AiGradingSchemeExtractor(
             "Zasady zaliczenia:\n---\n" +
             $"{Truncate(rawText, 8000)}\n---";
 
-        var requestBody = new
-        {
-            model = _options.Model,
-            messages = new object[]
-            {
-                new { role = "system", content = "Jesteś asystentem analizującym sylabusy uczelniane. Odpowiadasz tylko czystym JSON-em." },
-                new { role = "user", content = prompt },
-            },
-            // Low temperature: this is an extraction task, we want faithfulness.
-            temperature = 0.1,
-            // Force a syntactically valid JSON object (OpenAI + Ollama).
-            response_format = new { type = "json_object" },
-        };
+        var json = await chatClient.CompleteAsync(
+            new ChatCompletionRequest(
+                SystemPrompt: "Jesteś asystentem analizującym sylabusy uczelniane. Odpowiadasz tylko czystym JSON-em.",
+                UserPrompt: prompt,
+                // Low temperature: this is an extraction task, we want faithfulness.
+                Temperature: 0.1),
+            ct);
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, $"{_options.BaseUrl.TrimEnd('/')}/chat/completions")
-        {
-            Content = new StringContent(JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json"),
-        };
-        if (!string.IsNullOrWhiteSpace(_options.ApiKey))
-        {
-            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _options.ApiKey);
-        }
-
-        using var response = await httpClient.SendAsync(request, ct);
-        response.EnsureSuccessStatusCode();
-
-        var payload = await response.Content.ReadFromJsonAsync<ChatCompletionResponse>(cancellationToken: ct);
-        var content = payload?.Choices?.FirstOrDefault()?.Message?.Content
-            ?? throw new InvalidOperationException("Empty AI response");
-
-        var jsonStart = content.IndexOf('{');
-        var jsonEnd = content.LastIndexOf('}');
-        if (jsonStart < 0 || jsonEnd < jsonStart)
-            throw new InvalidOperationException("AI response did not contain a JSON object");
-
-        var wrapper = JsonSerializer.Deserialize<ComponentsWrapper>(content[jsonStart..(jsonEnd + 1)], new JsonSerializerOptions
+        var wrapper = JsonSerializer.Deserialize<ComponentsWrapper>(json, new JsonSerializerOptions
         {
             PropertyNameCaseInsensitive = true,
         });
@@ -133,23 +100,5 @@ public class AiGradingSchemeExtractor(
 
         [JsonPropertyName("category")]
         public string? Category { get; set; }
-    }
-
-    private class ChatCompletionResponse
-    {
-        [JsonPropertyName("choices")]
-        public List<Choice>? Choices { get; set; }
-
-        public class Choice
-        {
-            [JsonPropertyName("message")]
-            public Message? Message { get; set; }
-        }
-
-        public class Message
-        {
-            [JsonPropertyName("content")]
-            public string? Content { get; set; }
-        }
     }
 }

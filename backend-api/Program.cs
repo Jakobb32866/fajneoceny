@@ -3,6 +3,7 @@ using BackendApi.Auth;
 using BackendApi.Data;
 using BackendApi.Domain;
 using BackendApi.Endpoints;
+using BackendApi.Services.Ai;
 using BackendApi.Services.Flashcards;
 using BackendApi.Services.Grading;
 using BackendApi.Services.Storage;
@@ -42,21 +43,34 @@ builder.Services.AddSingleton<IDocumentTextExtractionService, DocumentTextExtrac
 
 builder.Services.AddSingleton<ISpacedRepetitionService, AnkiScheduler>();
 builder.Services.AddSingleton<IDailyFlashcardSelector, DailyFlashcardSelector>();
-builder.Services.AddSingleton<HeuristicFlashcardGenerationService>();
+
+// Chat-completions backend, hardwired to the OpenAI-compatible client (serves
+// OpenAI and local Ollama alike). Swapping providers = swapping this one line.
 // Local LLM inference (Ollama, CPU) can take well over HttpClient's default
 // 100s for a multi-card request — give it generous headroom so slow-but-valid
 // responses aren't cancelled into the heuristic fallback.
-builder.Services.AddHttpClient<AiFlashcardGenerationService>(client =>
+builder.Services.AddHttpClient<IChatCompletionClient, OpenAiChatCompletionClient>(client =>
     client.Timeout = TimeSpan.FromMinutes(5));
-builder.Services.AddSingleton<IFlashcardGenerationService>(sp => sp.GetRequiredService<AiFlashcardGenerationService>());
+
+// Flashcard generation: AI first, offline heuristic as the fallback. The AI
+// service depends on IFlashcardGenerationService for its fallback (DIP), wired
+// explicitly here to the heuristic implementation.
+builder.Services.AddSingleton<HeuristicFlashcardGenerationService>();
+builder.Services.AddSingleton<IFlashcardGenerationService>(sp => new AiFlashcardGenerationService(
+    sp.GetRequiredService<IChatCompletionClient>(),
+    sp.GetRequiredService<HeuristicFlashcardGenerationService>(),
+    sp.GetRequiredService<ILogger<AiFlashcardGenerationService>>()));
 
 // Grading-scheme extraction: LLM parse of the syllabus, with the offline regex
 // heuristic as the fallback (same wiring as flashcard generation).
 builder.Services.AddSingleton<HeuristicGradingSchemeExtractor>();
-builder.Services.AddHttpClient<AiGradingSchemeExtractor>(client =>
-    client.Timeout = TimeSpan.FromMinutes(5));
-builder.Services.AddSingleton<IGradingSchemeExtractor>(sp => sp.GetRequiredService<AiGradingSchemeExtractor>());
+builder.Services.AddSingleton<IGradingSchemeExtractor>(sp => new AiGradingSchemeExtractor(
+    sp.GetRequiredService<IChatCompletionClient>(),
+    sp.GetRequiredService<HeuristicGradingSchemeExtractor>(),
+    sp.GetRequiredService<ILogger<AiGradingSchemeExtractor>>()));
 
+// Text-to-speech, hardwired to the local Piper backend. Swap this line for a
+// different ITextToSpeechService (e.g. ElevenLabs) to change providers.
 builder.Services.AddSingleton<ITextToSpeechService, PiperTextToSpeechService>();
 builder.Services.AddSingleton<IFlashcardAudioExportService, FlashcardAudioExportService>();
 

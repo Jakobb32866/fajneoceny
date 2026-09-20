@@ -55,18 +55,18 @@ services:
   # LAN_IP must be your host machine's LAN address (e.g. 192.168.1.17) — find
   # it with `ipconfig getifaddr en0` on macOS or `hostname -I` on Linux. Expo
   # advertises this to the phone instead of the unreachable container IP, and
-  # mobile-app/src/api/config.ts reuses it to reach backend-api on :8080.
+  # frontend/src/api/config.ts reuses it to reach backend-api on :8080.
   # Set it in a .env file next to this compose file: LAN_IP=192.168.1.17
-  mobile-app:
+  frontend:
     build:
-      context: ./mobile-app
+      context: ./frontend
     environment:
       REACT_NATIVE_PACKAGER_HOSTNAME: ${LAN_IP:?set LAN_IP to your host LAN address, e.g. LAN_IP=192.168.1.17}
     volumes:
       # Live-reload edits from the host. The anonymous volume keeps the
       # container's own node_modules (installed for linux) from being shadowed
       # by the host's macOS-built one.
-      - ./mobile-app:/app
+      - ./frontend:/app
       - /app/node_modules
     ports:
       - "8081:8081"

@@ -35,7 +35,7 @@ plan mode, and defined subagents.
 - **Text-to-speech**: **Piper** TTS, exporting a daily session as a downloadable audio.
 - **Tests**: `backend-api.Tests/` — **xUnit**, focused on the scheduler's learning/review/relearn logic.
 
-### Mobile / web client — `mobile-app/`
+### Mobile / web client — `frontend/`
 - **Expo** + **React Native**, one codebase targeting iOS, Android, and web.
 - Custom theme/design-token layer in `src/theme/`.
 
@@ -52,7 +52,7 @@ plan mode, and defined subagents.
 ```
 backend-api/        .NET 10 API — Endpoints, Domain, Services, Auth, Data, Migrations
 backend-api.Tests/  xUnit tests (scheduler logic)
-mobile-app/         Expo / React Native client (iOS / Android / web)
+frontend/         Expo / React Native client (iOS / Android / web)
 docker-compose.yml  Backend + Ollama + Expo web
 TODO.md             Deferred, human-only follow-ups (e.g. real Google OAuth creds)
 ```
@@ -72,7 +72,7 @@ cd backend-api && dotnet run
 dotnet test backend-api.Tests
 
 # Mobile / web client
-cd mobile-app && npm install && npm run web   # or: npm run ios / npm run android
+cd frontend && npm install && npm run web   # or: npm run ios / npm run android
 ```
 
 > Google Sign-In needs real OAuth credentials before it works end-to-end;

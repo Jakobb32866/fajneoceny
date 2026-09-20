@@ -7,7 +7,7 @@ using Microsoft.EntityFrameworkCore;
 namespace BackendApi.Endpoints;
 
 public record CreateLessonRequest(string Title);
-public record LessonSummary(Guid Id, string Title, int Order, int FlashcardCount);
+public record LessonSummary(Guid Id, string Title, int Order, int FlashcardCount, DateTimeOffset CreatedAt);
 public record LessonDetail(Guid Id, string Title, int Order, string? NoteContent, List<SourceDto> Sources, List<DeckDto> Decks);
 public record SourceDto(Guid Id, string Title, SourceType Type, string Location);
 public record FlashcardDto(Guid Id, string Question, string Answer, Difficulty Difficulty);
@@ -25,7 +25,7 @@ public static class LessonEndpoints
                 .OrderBy(l => l.Order)
                 .Include(l => l.Flashcards)
                 .ToListAsync();
-            return lessons.Select(l => new LessonSummary(l.Id, l.Title, l.Order, l.Flashcards.Count));
+            return lessons.Select(l => new LessonSummary(l.Id, l.Title, l.Order, l.Flashcards.Count, l.CreatedAt));
         }).WithTags("Lessons").RequireAuthorization();
 
         app.MapPost("/api/subjects/{subjectId:guid}/lessons", async (Guid subjectId, CreateLessonRequest request, AppDbContext db) =>

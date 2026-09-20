@@ -18,14 +18,14 @@ jeszcze skonfigurowane.").
   - Authorized redirect URIs: trigger the Google sign-in flow once with a
     placeholder client ID — Google's `redirect_uri_mismatch` error page shows
     the exact URI it received; add that.
-- [ ] Fill in `mobile-app/src/api/config.ts` → `GOOGLE_OAUTH_CLIENT_IDS.web`
+- [ ] Fill in `frontend/src/api/config.ts` → `GOOGLE_OAUTH_CLIENT_IDS.web`
       with the new client ID.
 - [ ] Fill in the backend's allow-list so it only accepts ID tokens minted for
       this app:
   - Local `dotnet run`: `backend-api/appsettings.json` → `Google.ClientIds`.
   - Docker: uncomment and set `Google__ClientIds__0` in `docker-compose.yml`.
   - Restart the backend for the setting to take effect.
-- [ ] **Native (iOS/Android), later:** `mobile-app/app.json` has no
+- [ ] **Native (iOS/Android), later:** `frontend/app.json` has no
       `ios.bundleIdentifier` or `android.package` set yet — required before
       Google Console will issue matching iOS/Android client IDs (Android also
       needs the signing cert's SHA-1 fingerprint). Once set, create those
@@ -57,6 +57,32 @@ Settings screen are implemented. Deferred enhancements:
 - [ ] **FSRS**: once enough review history accrues, offer FSRS as an alternate
       `ISpacedRepetitionService` implementation (the interface is already the
       seam) with a per-user opt-in in `UserSrsSettings`.
+
+## Dashboard bento grid follow-ups (not blocking)
+
+The dashboard is a bento grid: daily-flashcards hero, two most-recent lessons,
+one most-recent subject, a "Dodaj przedmiot" tile, a cross-subject "Ostatnie
+oceny" digest, and a "Zobacz wszystkie przedmioty" tile (the full subject list
+moved to the new `Subjects` screen).
+
+- [x] **Persist recents**: `frontend/src/api/recents.ts` now persists recently
+      visited lessons/subjects to AsyncStorage (localStorage on web) and wipes
+      them on sign-out via `clearRecents()`. Empty slots fall back to the most
+      recently *added* lesson/subject.
+- [ ] **Rebuild the backend for `createdAt`**: the recents fallback orders by a
+      new `createdAt` field added to `SubjectSummary` / `LessonSummary`
+      (`backend-api/Endpoints/*.cs`). Until the running backend is rebuilt
+      (`docker compose up -d --build --remove-orphans backend-api`, or restart
+      the local `dotnet run`), the field is absent and the fallback degrades to
+      raw API order — correct once rebuilt.
+- [ ] **Profile screen**: the primary nav's "Profil" item (`AppNav`) routes to
+      `Settings` as a placeholder. Add a dedicated Profile screen/route and point
+      the item at it (`frontend/src/components/AppNav.tsx`, `ITEMS`).
+- [ ] **Recent-grades endpoint**: the "Ostatnie oceny" tile aggregates by
+      calling `GET /api/subjects/{id}/grades` for every subject
+      (`fetchRecentGrades` in `DashboardScreen.tsx`). A dedicated backend
+      endpoint returning the latest N entries across subjects would replace the
+      N-request fan-out.
 
 ## Auth follow-ups (from the original implementation plan, not blocking)
 

@@ -2,17 +2,6 @@ using BackendApi.Domain;
 
 namespace BackendApi.Services.Tts;
 
-public interface IFlashcardAudioExportService
-{
-    /// <summary>
-    /// Renders a whole flashcard set as a single WAV file: for each card,
-    /// question audio → a difficulty-scaled thinking pause → answer audio,
-    /// with a short gap between cards. Never split into per-card files —
-    /// the whole set is meant to play back-to-back, e.g. during a commute.
-    /// </summary>
-    Task<byte[]> ExportAsync(IReadOnlyList<Flashcard> cards, CancellationToken ct = default);
-}
-
 public class FlashcardAudioExportService(ITextToSpeechService tts) : IFlashcardAudioExportService
 {
     private static readonly Dictionary<Difficulty, TimeSpan> ThinkingPause = new()
@@ -35,14 +24,14 @@ public class FlashcardAudioExportService(ITextToSpeechService tts) : IFlashcardA
         {
             var card = cards[i];
 
-            var questionWav = await tts.SynthesizeAsync(card.Question, ct);
+            var questionWav = await SynthesizeWavAsync(card.Question, ct);
             var (qFormat, qPcm) = WavAudio.Parse(questionWav);
             format ??= qFormat;
             pcmChunks.Add(qPcm);
 
             pcmChunks.Add(WavAudio.Silence(format, ThinkingPause[card.Difficulty]));
 
-            var answerWav = await tts.SynthesizeAsync(card.Answer, ct);
+            var answerWav = await SynthesizeWavAsync(card.Answer, ct);
             var (_, aPcm) = WavAudio.Parse(answerWav);
             pcmChunks.Add(aPcm);
 
@@ -53,5 +42,21 @@ public class FlashcardAudioExportService(ITextToSpeechService tts) : IFlashcardA
         }
 
         return WavAudio.Build(format!, pcmChunks);
+    }
+
+    /// <summary>
+    /// Synthesizes one clip and enforces the WAV contract the splicer relies on.
+    /// Guards against a future TTS backend returning a different container.
+    /// </summary>
+    private async Task<byte[]> SynthesizeWavAsync(string text, CancellationToken ct)
+    {
+        var speech = await tts.SynthesizeAsync(text, ct);
+        if (speech.Format != SpeechAudioFormat.Wav)
+        {
+            throw new NotSupportedException(
+                $"Flashcard audio export requires WAV, but the TTS service returned {speech.Format}.");
+        }
+
+        return speech.Data;
     }
 }

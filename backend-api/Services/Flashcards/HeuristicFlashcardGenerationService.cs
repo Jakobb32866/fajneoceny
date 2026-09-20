@@ -5,7 +5,7 @@ namespace BackendApi.Services.Flashcards;
 
 /// <summary>
 /// Offline flashcard generator used when no AI endpoint is configured
-/// (see <see cref="AiOptions"/>). Pulls "term – definition" style lines for
+/// (see <see cref="Ai.AiOptions"/>). Pulls "term – definition" style lines for
 /// easy cards, and builds cloze-deletion questions (blank out a key word)
 /// from longer sentences for medium/hard cards. Much lower quality than an
 /// LLM, but keeps the feature usable fully offline.
