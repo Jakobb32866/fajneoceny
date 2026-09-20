@@ -77,7 +77,13 @@ export function AppNav({
                 <Text.BodySm style={{ color, fontFamily: theme.font.family.sansSemibold }}>
                   {item.label}
                 </Text.BodySm>
-              ) : null}
+              ) : (
+                <Text.Caption
+                  style={{ color, fontFamily: theme.font.family.sansSemibold, marginTop: theme.spacing[1] }}
+                >
+                  {item.label}
+                </Text.Caption>
+              )}
             </Pressable>
           );
         })}
@@ -95,12 +101,14 @@ const styles = StyleSheet.create({
   },
   topInner: {
     width: '100%',
-    maxWidth: 1040,
-    alignSelf: 'center',
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'flex-start',
     gap: theme.spacing[2],
     paddingVertical: theme.spacing[2],
+    // Pull the row left by the first item's inner padding so its icon lines up
+    // with the logo's left edge (both sit at the bar's horizontal padding).
+    marginLeft: -theme.spacing[3],
   },
   bottomBar: {
     backgroundColor: theme.colors.surface.card,
