@@ -19,6 +19,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, ICurrentUser c
     public DbSet<Flashcard> Flashcards => Set<Flashcard>();
     public DbSet<SpacedRepetitionState> SpacedRepetitionStates => Set<SpacedRepetitionState>();
     public DbSet<QuizSession> QuizSessions => Set<QuizSession>();
+    public DbSet<UserSrsSettings> UserSrsSettings => Set<UserSrsSettings>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -118,6 +119,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, ICurrentUser c
         modelBuilder.Entity<Flashcard>().HasQueryFilter(e => e.UserId == currentUser.UserId);
         modelBuilder.Entity<SpacedRepetitionState>().HasQueryFilter(e => e.UserId == currentUser.UserId);
         modelBuilder.Entity<QuizSession>().HasQueryFilter(e => e.UserId == currentUser.UserId);
+        modelBuilder.Entity<UserSrsSettings>().HasQueryFilter(e => e.UserId == currentUser.UserId);
+
+        // One settings row per user.
+        modelBuilder.Entity<UserSrsSettings>().HasIndex(e => e.UserId).IsUnique();
     }
 
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)

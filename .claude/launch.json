@@ -9,10 +9,10 @@
       "port": 8080
     },
     {
-      "name": "mobile-app-web",
+      "name": "frontend-web",
       "runtimeExecutable": "/Users/borysczajkowski/.nvm/versions/node/v24.18.0/bin/node",
       "runtimeArgs": ["node_modules/.bin/expo", "start", "--web", "--port", "8090"],
-      "cwd": "mobile-app",
+      "cwd": "frontend",
       "port": 8090
     },
     {

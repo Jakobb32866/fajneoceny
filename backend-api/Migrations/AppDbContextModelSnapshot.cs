@@ -302,6 +302,12 @@ namespace BackendApi.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT");
 
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("Due")
+                        .HasColumnType("TEXT");
+
                     b.Property<double>("EaseFactor")
                         .HasColumnType("REAL");
 
@@ -311,11 +317,20 @@ namespace BackendApi.Migrations
                     b.Property<int>("IntervalDays")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int>("Lapses")
+                        .HasColumnType("INTEGER");
+
                     b.Property<DateTimeOffset?>("LastReviewedAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<int>("LearningStepIndex")
+                        .HasColumnType("INTEGER");
+
                     b.Property<DateOnly>("NextReviewDate")
                         .HasColumnType("TEXT");
+
+                    b.Property<int>("Phase")
+                        .HasColumnType("INTEGER");
 
                     b.Property<int>("Repetitions")
                         .HasColumnType("INTEGER");
@@ -400,6 +415,68 @@ namespace BackendApi.Migrations
                         .IsUnique();
 
                     b.ToTable("Users");
+                });
+
+            modelBuilder.Entity("BackendApi.Domain.UserSrsSettings", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("DailySessionSize")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("DayRolloverHour")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<double>("EasyBonus")
+                        .HasColumnType("REAL");
+
+                    b.Property<int>("EasyIntervalDays")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("GraduatingIntervalDays")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<double>("HardMultiplier")
+                        .HasColumnType("REAL");
+
+                    b.Property<double>("LapseNewIntervalMultiplier")
+                        .HasColumnType("REAL");
+
+                    b.Property<string>("LearningStepsMinutes")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("MaximumIntervalDays")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("MinimumIntervalDays")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("NewCardsPerDay")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("RelearningStepsMinutes")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<double>("StartingEase")
+                        .HasColumnType("REAL");
+
+                    b.Property<string>("Timezone")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId")
+                        .IsUnique();
+
+                    b.ToTable("UserSrsSettings");
                 });
 
             modelBuilder.Entity("BackendApi.Domain.Deck", b =>

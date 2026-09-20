@@ -7,7 +7,7 @@ using Microsoft.EntityFrameworkCore;
 namespace BackendApi.Endpoints;
 
 public record CreateSubjectRequest(string Name, string? Description);
-public record SubjectSummary(Guid Id, string Name, string? Description, int LessonCount, double? CurrentEstimatePercent);
+public record SubjectSummary(Guid Id, string Name, string? Description, int LessonCount, double? CurrentEstimatePercent, DateTimeOffset CreatedAt);
 public record DraftGradingComponentDto(string Name, GradeCategory Category, double WeightPercent);
 public record SyllabusUploadResult(Guid SubjectId, string RawTextPreview, List<DraftGradingComponentDto> DraftComponents);
 public record SyllabusTextRequest(string Text);
@@ -76,7 +76,8 @@ public static class SubjectEndpoints
                 s.Name,
                 s.Description,
                 s.Lessons.Count,
-                s.GradingScheme is null ? null : gradeCalc.Calculate(s.GradingScheme).CurrentEstimatePercent));
+                s.GradingScheme is null ? null : gradeCalc.Calculate(s.GradingScheme).CurrentEstimatePercent,
+                s.CreatedAt));
         });
 
         group.MapPost("/", async (CreateSubjectRequest request, AppDbContext db) =>
