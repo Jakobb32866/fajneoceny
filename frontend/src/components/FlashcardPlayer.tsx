@@ -277,6 +277,9 @@ function ScheduledFlashcardPlayer({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    width: '100%',
+    maxWidth: theme.layout.contentMaxWidth,
+    alignSelf: 'center',
     padding: theme.spacing[4],
     gap: theme.spacing[4],
     backgroundColor: theme.colors.surface.app,

@@ -22,6 +22,7 @@ export function SubjectsScreen({ navigation }: Props) {
 
   return (
     <View style={styles.container}>
+      <View style={styles.content}>
       {subjects === null ? (
         <ActivityIndicator style={{ marginTop: 32 }} />
       ) : (
@@ -67,6 +68,7 @@ export function SubjectsScreen({ navigation }: Props) {
       <Pressable style={styles.fab} onPress={() => setCreateVisible(true)}>
         <Plus size={26} color={theme.colors.brand.onBrand} strokeWidth={2.5} />
       </Pressable>
+      </View>
 
       <CreateSubjectModal
         visible={createVisible}
@@ -83,6 +85,7 @@ export function SubjectsScreen({ navigation }: Props) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.surface.app },
+  content: { flex: 1, width: '100%', maxWidth: theme.layout.contentMaxWidth, alignSelf: 'center' },
   subjectCard: {
     flexDirection: 'row',
     alignItems: 'center',

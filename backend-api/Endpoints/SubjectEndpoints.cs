@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 namespace BackendApi.Endpoints;
 
 public record CreateSubjectRequest(string Name, string? Description);
+public record UpdateSubjectRequest(string Name, string? Description);
 public record SubjectSummary(Guid Id, string Name, string? Description, int LessonCount, double? CurrentEstimatePercent, DateTimeOffset CreatedAt);
 public record DraftGradingComponentDto(string Name, GradeCategory Category, double WeightPercent);
 public record SyllabusUploadResult(Guid SubjectId, string RawTextPreview, List<DraftGradingComponentDto> DraftComponents);
@@ -94,6 +95,20 @@ public static class SubjectEndpoints
                 .Include(s => s.Lessons.OrderBy(l => l.Order))
                 .FirstOrDefaultAsync(s => s.Id == id);
             return subject is null ? Results.NotFound() : Results.Ok(subject);
+        });
+
+        group.MapPut("/{id:guid}", async (Guid id, UpdateSubjectRequest request, AppDbContext db) =>
+        {
+            var name = request.Name?.Trim();
+            if (string.IsNullOrEmpty(name)) return Results.BadRequest("Name is required.");
+
+            var subject = await db.Subjects.FirstOrDefaultAsync(e => e.Id == id);
+            if (subject is null) return Results.NotFound();
+
+            subject.Name = name;
+            subject.Description = request.Description?.Trim();
+            await db.SaveChangesAsync();
+            return Results.NoContent();
         });
 
         group.MapDelete("/{id:guid}", async (Guid id, AppDbContext db) =>

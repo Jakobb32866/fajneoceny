@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 namespace BackendApi.Endpoints;
 
 public record CreateLessonRequest(string Title);
+public record UpdateLessonRequest(string Title);
 public record LessonSummary(Guid Id, string Title, int Order, int FlashcardCount, DateTimeOffset CreatedAt);
 public record LessonDetail(Guid Id, string Title, int Order, string? NoteContent, List<SourceDto> Sources, List<DeckDto> Decks);
 public record SourceDto(Guid Id, string Title, SourceType Type, string Location);
@@ -58,6 +59,19 @@ public static class LessonEndpoints
                 lesson.Notes.OrderByDescending(n => n.UpdatedAt).FirstOrDefault()?.Content,
                 lesson.Sources.Select(s => new SourceDto(s.Id, s.Title, s.Type, s.Location)).ToList(),
                 lesson.Decks.OrderBy(d => d.CreatedAt).Select(d => d.ToDto()).ToList()));
+        }).WithTags("Lessons").RequireAuthorization();
+
+        app.MapPut("/api/lessons/{id:guid}", async (Guid id, UpdateLessonRequest request, AppDbContext db) =>
+        {
+            var title = request.Title?.Trim();
+            if (string.IsNullOrEmpty(title)) return Results.BadRequest("Title is required.");
+
+            var lesson = await db.Lessons.FirstOrDefaultAsync(e => e.Id == id);
+            if (lesson is null) return Results.NotFound();
+
+            lesson.Title = title;
+            await db.SaveChangesAsync();
+            return Results.NoContent();
         }).WithTags("Lessons").RequireAuthorization();
 
         app.MapDelete("/api/lessons/{id:guid}", async (Guid id, AppDbContext db) =>
