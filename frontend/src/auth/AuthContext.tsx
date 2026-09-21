@@ -21,7 +21,13 @@ interface RegisterData {
   password: string;
   firstName: string;
   lastName: string;
-  schoolName: string;
+  universityId?: string;
+  schoolName?: string;
+}
+
+interface GoogleProfileCompletion {
+  universityId?: string;
+  schoolName?: string;
 }
 
 interface AuthContextValue {
@@ -30,7 +36,8 @@ interface AuthContextValue {
   signInWithEmail: (email: string, password: string) => Promise<void>;
   register: (data: RegisterData) => Promise<void>;
   signInWithGoogle: () => Promise<{ needsSchoolName: boolean }>;
-  completeGoogleProfile: (schoolName: string) => Promise<void>;
+  completeGoogleProfile: (profile: GoogleProfileCompletion) => Promise<void>;
+  setUniversity: (universityId: string) => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -116,7 +123,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     const response = await api.auth.google(idToken);
-    if (!response.user.schoolName) {
+    if (!response.user.schoolName && !response.user.universityId) {
       pendingGoogleIdToken.current = idToken;
       return { needsSchoolName: true };
     }
@@ -127,16 +134,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { needsSchoolName: false };
   }
 
-  async function completeGoogleProfile(schoolName: string) {
+  async function completeGoogleProfile(profile: GoogleProfileCompletion) {
     const idToken = pendingGoogleIdToken.current;
     if (!idToken) {
       throw new Error('Sesja logowania przez Google wygasła — spróbuj ponownie.');
     }
-    const response = await api.auth.google(idToken, schoolName);
+    const response = await api.auth.google(idToken, profile.schoolName, profile.universityId);
     pendingGoogleIdToken.current = null;
     await setToken(response.token);
     setUser(response.user);
     setStatus('signedIn');
+  }
+
+  async function setUniversity(universityId: string) {
+    const updated = await api.setUniversity(universityId);
+    setUser(updated);
   }
 
   async function signOut() {
@@ -152,7 +164,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ status, user, signInWithEmail, register, signInWithGoogle, completeGoogleProfile, signOut }}
+      value={{
+        status,
+        user,
+        signInWithEmail,
+        register,
+        signInWithGoogle,
+        completeGoogleProfile,
+        setUniversity,
+        signOut,
+      }}
     >
       {children}
     </AuthContext.Provider>
