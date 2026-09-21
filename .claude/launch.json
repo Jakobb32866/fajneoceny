@@ -20,6 +20,13 @@
       "runtimeExecutable": "python3",
       "runtimeArgs": ["-m", "http.server", "8070"],
       "port": 8070
+    },
+    {
+      "name": "backend-api-smoke",
+      "runtimeExecutable": "/usr/local/share/dotnet/dotnet",
+      "runtimeArgs": ["run", "--urls", "http://localhost:8099", "--", "--ConnectionStrings:DefaultConnection=Data Source=smoke.db"],
+      "cwd": "backend-api",
+      "port": 8099
     }
   ]
 }

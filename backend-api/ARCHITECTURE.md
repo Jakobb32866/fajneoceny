@@ -42,9 +42,11 @@ data layer.
 
 ### Endpoints
 `AuthEndpoints`, `SubjectEndpoints`, `LessonEndpoints`, `DeckEndpoints`,
-`FlashcardEndpoints`, `SettingsEndpoints`. Registered in `Program.cs` via
-`app.Map*Endpoints()` extension methods. All resource endpoints
-`RequireAuthorization()`; only the auth routes are anonymous.
+`FlashcardEndpoints`, `SettingsEndpoints`, `UniversityEndpoints`,
+`CommunityEndpoints`. Registered in `Program.cs` via `app.Map*Endpoints()`
+extension methods. All resource endpoints `RequireAuthorization()`; only the
+auth routes and `GET /api/universities` (used by the registration screen) are
+anonymous.
 
 ### Services
 
@@ -86,6 +88,24 @@ data layer.
 **`Services/Storage/`** — `IFileStorageService` → `FileStorageService`
 (uploaded files under a configured root).
 
+**`Services/Community/`** — the cross-user "Społeczność" feature:
+- `CommunityQueries` is the **only** place allowed to call
+  `IgnoreQueryFilters()`. It exposes `VisibleLessonsForCourse` /
+  `VisibleLessonById`, which encode the single visibility invariant (lesson
+  `IsShared` and its subject linked to a university course). Handlers always
+  project the result to DTOs and never hand the `IQueryable` around.
+- `CommunityAuthorization` answers "is this user recognised" (has a
+  `UniversityId`) and "may they access this course" (course belongs to their
+  university). Every community route checks it and answers 404 on failure so
+  existence isn't leaked.
+- `LessonForkService` deep-copies a shared lesson (title, newest note, decks,
+  cards) into the caller's subject and re-syncs it later. It never copies
+  `SpacedRepetitionState`/`QuizSession`, and uses tracked adds/removes (not
+  `ExecuteDelete`) so the `ContentUpdatedAt` bump fires.
+- `CourseProposalReconciliation` links a subject to its course once the owner
+  has approved the proposal in SQL (`Status='Approved'`, `CourseId` set); it
+  runs at the top of `GET /api/subjects`.
+
 ### Auth
 - `ICurrentUser` → `CurrentUser` resolves the caller's id from the JWT via
   `IHttpContextAccessor`. **`AppDbContext` depends on it** to scope data.
@@ -100,9 +120,23 @@ data layer.
     endpoints use `FirstOrDefaultAsync(e => e.Id == id)`.)
   - **Ownership stamping**: `SaveChanges[Async]` stamps `UserId` on new
     `IOwnedByUser` entities automatically.
+  - **`Lesson.ContentUpdatedAt` bump**: `SaveChanges[Async]` collects the
+    lesson ids of any added/modified/deleted `Note`/`Deck`/`Flashcard` before
+    the base save and then `ExecuteUpdate`s those lessons' `ContentUpdatedAt`.
+    Community sorting and "your fork is behind the original" rely on it.
 - Domain aggregate: `Subject → Lesson → {Note, Deck, Flashcard}`,
   `Subject → GradingScheme → GradingComponent → GradeEntry`, and
   `Flashcard → SpacedRepetitionState`. Cascade deletes are configured to match.
+- Community entities: `University → UniversityCourse` are **shared reference
+  data** (not `IOwnedByUser`, no query filter, curated only via SQL — see
+  `docs/community-admin-sql.md`; `UniversitySeeder` seeds PJATK on startup).
+  `User.UniversityId?` and `Subject.UniversityCourseId?` link into them (one
+  subject per user per course). `CourseProposal` is user-owned.
+  `LessonLike` is deliberately unfiltered (like counts are read cross-user) so
+  endpoints set its `UserId` explicitly; `Lesson.LikeCount` is denormalised.
+  `Lesson` also carries `IsShared`/`SharedAt` and fork provenance
+  (`ForkedFromLessonId` as a bare scalar so the original may be deleted,
+  `ForkedFromAuthorName` snapshot, `ForkSyncedAt`).
 
 ## Cross-cutting request flow
 
@@ -142,7 +176,8 @@ the feature never hard-fails.
 `Program.cs` is the single composition root: it binds options sections, wires
 every interface to its implementation (including the explicit AI→heuristic
 fallback composition), configures EF Core, JWT auth, CORS, and OpenAPI, runs
-migrations + `DeckBackfill` on startup, and maps the endpoint groups.
+migrations + `DeckBackfill` + `UniversitySeeder` on startup, and maps the
+endpoint groups.
 
 ## Dependency graph
 

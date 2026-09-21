@@ -13,3 +13,4 @@ app.db-*
 # local Piper TTS install (Docker installs its own inside the image)
 .tts-venv/
 voices/
+smoke.db*

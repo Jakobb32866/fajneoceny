@@ -61,6 +61,13 @@ public static class LessonForkService
         CopyContent(fork, original);
         fork.ForkSyncedAt = original.ContentUpdatedAt;
 
+        // The fork is already tracked, so entities that merely appear in its
+        // navigations during DetectChanges would be picked up as Modified
+        // (their Guid keys are pre-set) and fail with 0 rows updated. Add
+        // them explicitly; AddRange marks the reachable Flashcards Added too.
+        db.Notes.AddRange(fork.Notes);
+        db.Decks.AddRange(fork.Decks);
+
         await db.SaveChangesAsync();
     }
 

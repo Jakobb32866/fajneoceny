@@ -95,7 +95,7 @@ export function UniversityPicker({ value, onChange, label = 'Uczelnia / szkoła'
           }}
           numberOfLines={1}
         >
-          {displayLabel || 'Wybierz uczelnię lub wpisz nazwę szkoły'}
+          {displayLabel || (allowFreeText ? 'Wybierz uczelnię lub wpisz nazwę szkoły' : 'Wybierz uczelnię')}
         </Text.Body>
         <ChevronRight size={18} color={theme.colors.text.tertiary} />
       </Pressable>

@@ -56,21 +56,29 @@ public static class CommunityEndpoints
                 query = query.Where(l => EF.Functions.Like(l.Title, $"%{q}%"));
             }
 
-            query = sort switch
+            // SQLite can't ORDER BY a DateTimeOffset column (EF refuses to
+            // translate it), so sort a lightweight projection in memory. A
+            // course's shared-lesson list is small enough for this to be cheap.
+            var candidates = await query
+                .Select(l => new { l.Id, l.LikeCount, SharedAt = l.SharedAt ?? default, l.ContentUpdatedAt })
+                .ToListAsync();
+
+            var ordered = sort switch
             {
-                "published" => query.OrderByDescending(l => l.SharedAt),
-                "updated" => query.OrderByDescending(l => l.ContentUpdatedAt),
-                _ => query.OrderByDescending(l => l.LikeCount).ThenByDescending(l => l.SharedAt),
+                "published" => candidates.OrderByDescending(l => l.SharedAt),
+                "updated" => candidates.OrderByDescending(l => l.ContentUpdatedAt),
+                _ => candidates.OrderByDescending(l => l.LikeCount).ThenByDescending(l => l.SharedAt),
             };
 
             var pageNum = page is null or < 1 ? 1 : page.Value;
 
-            var totalCount = await query.CountAsync();
+            var totalCount = candidates.Count;
             var totalPages = (int)Math.Ceiling(totalCount / (double)PageSize);
 
-            var pageLessons = await query
-                .Skip((pageNum - 1) * PageSize)
-                .Take(PageSize)
+            var pageIds = ordered.Skip((pageNum - 1) * PageSize).Take(PageSize).Select(l => l.Id).ToList();
+
+            var pageRows = await CommunityQueries.VisibleLessonsForCourse(db, courseId)
+                .Where(l => pageIds.Contains(l.Id))
                 .Select(l => new
                 {
                     l.Id,
@@ -83,6 +91,13 @@ public static class CommunityEndpoints
                     l.ContentUpdatedAt,
                 })
                 .ToListAsync();
+
+            // Re-apply the in-memory order; the id lookup query returns rows in any order.
+            var pageLessons = pageIds
+                .Select(id => pageRows.FirstOrDefault(r => r.Id == id))
+                .Where(r => r is not null)
+                .Select(r => r!)
+                .ToList();
 
             var lessonIds = pageLessons.Select(l => l.Id).ToList();
             var likedLessonIds = (await db.LessonLikes

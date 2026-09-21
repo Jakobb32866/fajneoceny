@@ -84,39 +84,46 @@ moved to the new `Subjects` screen).
       endpoint returning the latest N entries across subjects would replace the
       N-request fan-out.
 
-## Community feature (schema laid, endpoints/UI not built yet)
+## Community feature (Społeczność) follow-ups
 
-The university/community *foundation* is in place: domain entities
-(`University`, `UniversityCourse`, `CourseProposal`, `LessonLike`, plus
-`User.UniversityId`, `Subject.UniversityCourseId`, and the sharing/fork/like
-fields on `Lesson`), the `AddUniversitiesAndCommunity` migration, the PJATK
-seed data (`backend-api/Data/UniversitySeeder.cs`), the shared
-`CommunityAuthorization` / `CommunityQueries` helpers
-(`backend-api/Services/Community/`), and the frontend API contract
-(`frontend/src/api/types.ts`, `client.ts`, `cacheKeys.ts`,
-`navigation/types.ts`). None of the actual behavior is implemented yet:
+The community feature (universities, curated courses, course proposals, shared
+lessons with likes, fork + sync) is implemented end-to-end. Universities,
+courses and proposal review are owner-curated via SQL by design — see
+[docs/community-admin-sql.md](docs/community-admin-sql.md). Deferred:
 
-- [ ] **`backend-api/Endpoints/UniversityEndpoints.cs`**: `GET
-      /api/universities`, `GET /api/universities/mine/courses`, `PUT
-      /api/settings/university`. Currently an empty stub.
-- [ ] **`backend-api/Endpoints/CommunityEndpoints.cs`**: share/unshare a
-      lesson, sync-fork, list/get community lessons, like/unlike, fork.
-      Currently an empty stub.
-- [ ] **`SubjectEndpoints.cs`**: `POST /api/subjects` needs to accept the new
-      `{ name?, description?, universityCourseId?, proposeAsCourse? }` shape
-      (the frontend client already sends it) and create a `CourseProposal`
-      when `proposeAsCourse` is set; subject responses need the new
-      `universityCourseId` / `courseName` / `courseCode` / `proposalStatus`
-      fields the frontend types already expect.
-- [ ] **`AuthEndpoints.cs`**: `UserDto`/register/google need
-      `universityId` / `universityName` / `isRecognised`, matching the
-      extended frontend `AuthUser`.
-- [ ] **Frontend UI**: no screens yet. `RootStackParamList` has a
-      `CommunityLesson` route declared for a future screen, but nothing
-      registers it.
-- [ ] University/course rows themselves stay owner-curated via direct SQL
-      (see the doc comments on `University`/`UniversityCourse`/
-      `CourseProposal`) — there's no admin UI, by design.
+- [ ] **Notifications** ("your proposal was approved/rejected", "someone
+      liked your lesson"). The schema already records what a notifier needs:
+      `CourseProposals.ReviewedAt`/`AppliedAt` and `LessonLikes.CreatedAt`.
+      Suggested shape: a `Notifications` table (`UserId`, `Kind`, `Payload`,
+      `CreatedAt`, `ReadAt`) filled by the reconciliation step and the like
+      endpoint, plus `GET /api/notifications` and an unread badge in
+      `AppHeader`. Push (`expo-notifications`) can piggyback on it later.
+- [ ] **Note format across platforms.** The web editor stores Quill HTML,
+      the native editor stores markdown, and `Note.Content` has no format
+      marker. This predates community sharing, but a note authored on one
+      platform now renders as raw markup for a classmate on the other.
+      Options: store a `Format` column, or convert to one canonical format on
+      save.
+- [ ] **Cross-user HTML.** Shared note HTML is rendered by Quill (web) which
+      normalises it through its clipboard matcher, so scripts are dropped,
+      but there is no server-side sanitiser. Add one (e.g. HtmlSanitizer) if
+      the note is ever rendered outside Quill.
+- [ ] **Free-text schools are never auto-linked.** When a university is added
+      to the curated list, users who typed that name still have
+      `UniversityId = NULL` until they pick it in Settings. A one-off SQL
+      `UPDATE Users SET UniversityId = … WHERE lower(SchoolName) = …` is the
+      manual workaround.
+- [ ] **Community list ordering is done in memory** (SQLite can't `ORDER BY`
+      a `DateTimeOffset` column). Fine for course-sized lists; revisit if a
+      course ever has thousands of shared lessons.
+- [ ] Backend tests for the feature (`LessonForkServiceTests`,
+      `CommunityVisibilityTests`, `LessonLikeTests`,
+      `CourseProposalReconciliationTests`, `ContentUpdatedAtBumpTests`) were
+      written but deliberately **not run yet** — run `dotnet test
+      backend-api.Tests` and fix anything that surfaces.
+- [ ] The `backend-api-smoke` entry in `.claude/launch.json` (port 8099,
+      throwaway `smoke.db`) exists for local end-to-end checks while the
+      docker container holds 8080; `backend-api/smoke.db` is gitignored.
 
 ## Auth follow-ups (from the original implementation plan, not blocking)
 
