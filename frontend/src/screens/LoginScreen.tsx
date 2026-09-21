@@ -3,6 +3,7 @@ import { KeyboardAvoidingView, Platform, ScrollView, useWindowDimensions, View }
 import { useAuth } from '../auth/AuthContext';
 import { googleErrorMessage, loginErrorMessage, registerErrorMessage } from '../auth/authErrors';
 import { LoginFeatures } from '../components/LoginFeatures';
+import { UniversityPicker, type UniversityPickerValue } from '../components/UniversityPicker';
 import { Banner } from '../components/ui/Banner';
 import { Logo } from '../components/ui/Brand';
 import { Button } from '../components/ui/Button';
@@ -24,15 +25,18 @@ export function LoginScreen() {
   const [password, setPassword] = useState('');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
-  const [schoolName, setSchoolName] = useState('');
+  const [school, setSchool] = useState<UniversityPickerValue>({ universityId: null, schoolName: '' });
 
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [googleNeedsSchool, setGoogleNeedsSchool] = useState(false);
-  const [googleSchoolName, setGoogleSchoolName] = useState('');
+  const [googleSchool, setGoogleSchool] = useState<UniversityPickerValue>({ universityId: null, schoolName: '' });
   const [savingGoogleSchool, setSavingGoogleSchool] = useState(false);
+
+  const registerSchoolValid = !!school.universityId || !!school.schoolName.trim();
+  const googleSchoolValid = !!googleSchool.universityId || !!googleSchool.schoolName.trim();
 
   async function handleSubmit() {
     setError(null);
@@ -46,7 +50,8 @@ export function LoginScreen() {
           password,
           firstName: firstName.trim(),
           lastName: lastName.trim(),
-          schoolName: schoolName.trim(),
+          universityId: school.universityId ?? undefined,
+          schoolName: school.universityId ? undefined : school.schoolName.trim() || undefined,
         });
       }
     } catch (e) {
@@ -75,7 +80,10 @@ export function LoginScreen() {
     setError(null);
     setSavingGoogleSchool(true);
     try {
-      await completeGoogleProfile(googleSchoolName.trim());
+      await completeGoogleProfile({
+        universityId: googleSchool.universityId ?? undefined,
+        schoolName: googleSchool.universityId ? undefined : googleSchool.schoolName.trim() || undefined,
+      });
     } catch (e) {
       setError(googleErrorMessage(e));
     } finally {
@@ -127,19 +135,13 @@ export function LoginScreen() {
                   <Text.BodySm>
                     Podaj nazwę swojej szkoły, żeby dokończyć zakładanie konta przez Google.
                   </Text.BodySm>
-                  <TextField
-                    label="Szkoła"
-                    placeholder="np. Liceum Ogólnokształcące nr 1"
-                    value={googleSchoolName}
-                    onChangeText={setGoogleSchoolName}
-                    autoCapitalize="words"
-                  />
+                  <UniversityPicker value={googleSchool} onChange={setGoogleSchool} />
                   {error ? <Banner message={error} /> : null}
                   <Button
                     title="Zapisz"
                     onPress={handleSaveGoogleSchool}
                     loading={savingGoogleSchool}
-                    disabled={!googleSchoolName.trim()}
+                    disabled={!googleSchoolValid}
                     fullWidth
                   />
                 </>
@@ -179,13 +181,7 @@ export function LoginScreen() {
                         value={lastName}
                         onChangeText={setLastName}
                       />
-                      <TextField
-                        label="Szkoła"
-                        placeholder="np. Liceum Ogólnokształcące nr 1"
-                        value={schoolName}
-                        onChangeText={setSchoolName}
-                        autoCapitalize="words"
-                      />
+                      <UniversityPicker value={school} onChange={setSchool} />
                     </>
                   ) : null}
 
@@ -195,6 +191,7 @@ export function LoginScreen() {
                     title={mode === 'login' ? 'Zaloguj się' : 'Zarejestruj się'}
                     onPress={handleSubmit}
                     loading={loading}
+                    disabled={mode === 'register' && !registerSchoolValid}
                     fullWidth
                   />
 
