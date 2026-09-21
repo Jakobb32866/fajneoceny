@@ -3,6 +3,7 @@ import { fontFamily, fontSize, fontWeight, lineHeight, tracking } from './typogr
 import { spacing } from './spacing';
 import { radius } from './radius';
 import { shadows } from './shadows';
+import { layout } from './layout';
 
 export const theme = {
   colors,
@@ -11,6 +12,7 @@ export const theme = {
   spacing,
   radius,
   shadows,
+  layout,
 } as const;
 
 export type Theme = typeof theme;
@@ -20,3 +22,4 @@ export { fontFamily, fontSize, fontWeight, lineHeight, tracking } from './typogr
 export { spacing } from './spacing';
 export { radius } from './radius';
 export { shadows } from './shadows';
+export { layout } from './layout';

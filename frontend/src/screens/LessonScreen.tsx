@@ -10,13 +10,14 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { FileText, Link as LinkIcon, PenLine, Play, Sparkles } from 'lucide-react-native';
+import { FileText, Link as LinkIcon, Pencil, PenLine, Play, Sparkles, Trash2 } from 'lucide-react-native';
 import { getCached, invalidate, setCached } from '../api/cache';
 import { cacheKeys } from '../api/cacheKeys';
 import { recordLessonVisit } from '../api/recents';
 import { api } from '../api/client';
 import { useCachedQuery } from '../hooks/useCachedQuery';
 import { RichNoteEditor } from '../components/RichNoteEditor';
+import { RenameModal } from '../components/RenameModal';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
@@ -57,6 +58,7 @@ export function LessonScreen({ route, navigation }: Props) {
   const [noteText, setNoteText] = useState('');
   const [quizModalVisible, setQuizModalVisible] = useState(false);
   const [addLinkVisible, setAddLinkVisible] = useState(false);
+  const [renameVisible, setRenameVisible] = useState(false);
   const [generating, setGenerating] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -143,6 +145,41 @@ export function LessonScreen({ route, navigation }: Props) {
     if (ok) api.deleteDeck(deckId).then(reloadLesson);
   };
 
+  const renameLesson = async (title: string) => {
+    setRenameVisible(false);
+    try {
+      await api.updateLesson(lessonId, title);
+      // Write through so the header updates immediately, then refresh the lists
+      // that show this lesson's title elsewhere.
+      const cached = getCached<LessonDetail>(lessonKey);
+      if (cached) setCached(lessonKey, { ...cached, title });
+      invalidate('subject'); // every subject's lesson list
+      invalidate(cacheKeys.subjects);
+      invalidate(cacheKeys.dashboardFallbackLessons);
+    } catch (e) {
+      Alert.alert('Nie udało się zmienić nazwy', String(e));
+    }
+  };
+
+  const deleteLesson = async () => {
+    if (!lesson) return;
+    const ok = await confirmAsync(
+      'Usunąć lekcję?',
+      `„${lesson.title}" wraz z notatkami i fiszkami zostanie trwale usunięta.`,
+    );
+    if (!ok) return;
+    try {
+      await api.deleteLesson(lessonId);
+      invalidate('subject'); // every subject's lesson list
+      invalidate(cacheKeys.subjects);
+      invalidate(cacheKeys.dailySummary);
+      invalidate(cacheKeys.dashboardFallbackLessons);
+      navigation.goBack();
+    } catch (e) {
+      Alert.alert('Nie udało się usunąć lekcji', String(e));
+    }
+  };
+
   if (!lesson) {
     return (
       <View style={styles.center}>
@@ -154,9 +191,35 @@ export function LessonScreen({ route, navigation }: Props) {
   return (
     <ScrollView
       style={styles.container}
-      contentContainerStyle={{ padding: theme.spacing[4], gap: theme.spacing[5] }}
+      contentContainerStyle={{
+        padding: theme.spacing[4],
+        gap: theme.spacing[5],
+        width: '100%',
+        maxWidth: theme.layout.contentMaxWidth,
+        alignSelf: 'center',
+      }}
     >
-      <Text.HeadlineLg>{lesson.title}</Text.HeadlineLg>
+      <View style={styles.titleRow}>
+        <Text.HeadlineLg style={{ flex: 1 }}>{lesson.title}</Text.HeadlineLg>
+        <TouchableOpacity
+          onPress={() => setRenameVisible(true)}
+          accessibilityRole="button"
+          accessibilityLabel="Zmień nazwę lekcji"
+          hitSlop={8}
+          style={styles.titleAction}
+        >
+          <Pencil size={20} color={theme.colors.text.secondary} />
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={deleteLesson}
+          accessibilityRole="button"
+          accessibilityLabel="Usuń lekcję"
+          hitSlop={8}
+          style={styles.titleAction}
+        >
+          <Trash2 size={20} color={theme.colors.status.danger} />
+        </TouchableOpacity>
+      </View>
 
       <View>
         <Text.Title style={styles.sectionTitle}>Notatki</Text.Title>
@@ -281,6 +344,14 @@ export function LessonScreen({ route, navigation }: Props) {
         </View>
       </View>
 
+      <RenameModal
+        visible={renameVisible}
+        title="Zmień nazwę lekcji"
+        label="Tytuł lekcji"
+        initialValue={lesson.title}
+        onClose={() => setRenameVisible(false)}
+        onSubmit={renameLesson}
+      />
       <QuizConfigModal
         visible={quizModalVisible}
         onClose={() => setQuizModalVisible(false)}
@@ -374,6 +445,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: theme.colors.surface.app,
   },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing[2] },
+  titleAction: { padding: theme.spacing[1] },
   sectionTitle: { marginBottom: theme.spacing[2] },
   sectionHeader: {
     flexDirection: 'row',

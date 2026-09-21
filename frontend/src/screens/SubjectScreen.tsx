@@ -1,19 +1,21 @@
 import { useEffect, useState } from 'react';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import * as DocumentPicker from 'expo-document-picker';
-import { ActivityIndicator, Alert, FlatList, Pressable, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Pressable, TouchableOpacity, View } from 'react-native';
 import { invalidate } from '../api/cache';
 import { cacheKeys } from '../api/cacheKeys';
-import { ClipboardPaste, FileUp, Plus, Upload } from 'lucide-react-native';
+import { ClipboardPaste, FileUp, Pencil, Plus, Trash2, Upload } from 'lucide-react-native';
 import { recordSubjectVisit } from '../api/recents';
 import { api } from '../api/client';
 import { useCachedQuery } from '../hooks/useCachedQuery';
 import { GradeSheet } from '../components/GradeSheet';
+import { RenameModal } from '../components/RenameModal';
 import { Button } from '../components/ui/Button';
 import { TextField } from '../components/ui/Input';
 import { ModalSheet } from '../components/ui/ModalSheet';
 import { Text } from '../components/ui/Text';
 import { theme } from '../theme';
+import { confirmAsync } from '../utils/confirm';
 import type { RootStackParamList } from '../navigation/types';
 import type { LessonSummary } from '../api/types';
 
@@ -26,6 +28,9 @@ export function SubjectScreen({ route, navigation }: Props) {
   const [createVisible, setCreateVisible] = useState(false);
   const [syllabusChooserVisible, setSyllabusChooserVisible] = useState(false);
   const [pasteVisible, setPasteVisible] = useState(false);
+  const [renameVisible, setRenameVisible] = useState(false);
+  // Locally tracked so a rename updates the header without navigating away.
+  const [name, setName] = useState(subjectName);
 
   // Surface this subject in the dashboard's "recently visited" bento tile.
   useEffect(() => {
@@ -68,6 +73,37 @@ export function SubjectScreen({ route, navigation }: Props) {
     }
   };
 
+  const renameSubject = async (newName: string) => {
+    setRenameVisible(false);
+    try {
+      await api.updateSubject(subjectId, newName);
+      setName(newName);
+      invalidate(cacheKeys.subjects); // dashboard + subjects list titles
+      invalidate(cacheKeys.subject(subjectId));
+    } catch (e) {
+      Alert.alert('Nie udało się zmienić nazwy', String(e));
+    }
+  };
+
+  const deleteSubject = async () => {
+    const ok = await confirmAsync(
+      'Usunąć przedmiot?',
+      `„${name}" wraz z lekcjami, fiszkami i ocenami zostanie trwale usunięty.`,
+    );
+    if (!ok) return;
+    try {
+      await api.deleteSubject(subjectId);
+      invalidate(cacheKeys.subjects);
+      invalidate(cacheKeys.subject(subjectId));
+      invalidate(cacheKeys.dailySummary);
+      invalidate(cacheKeys.dashboardGrades);
+      invalidate(cacheKeys.dashboardFallbackLessons);
+      navigation.goBack();
+    } catch (e) {
+      Alert.alert('Nie udało się usunąć przedmiotu', String(e));
+    }
+  };
+
   const submitPastedSyllabus = async (text: string) => {
     try {
       const uploadResult = await api.uploadSyllabusText(subjectId, text);
@@ -80,9 +116,43 @@ export function SubjectScreen({ route, navigation }: Props) {
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.surface.app }}>
-      <Text.HeadlineLg style={{ paddingHorizontal: theme.spacing[4], paddingTop: theme.spacing[4] }}>
-        {subjectName}
-      </Text.HeadlineLg>
+      <View
+        style={{
+          flex: 1,
+          width: '100%',
+          maxWidth: theme.layout.contentMaxWidth,
+          alignSelf: 'center',
+        }}
+      >
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: theme.spacing[2],
+          paddingHorizontal: theme.spacing[4],
+          paddingTop: theme.spacing[4],
+        }}
+      >
+        <Text.HeadlineLg style={{ flex: 1 }}>{name}</Text.HeadlineLg>
+        <TouchableOpacity
+          onPress={() => setRenameVisible(true)}
+          accessibilityRole="button"
+          accessibilityLabel="Zmień nazwę przedmiotu"
+          hitSlop={8}
+          style={{ padding: theme.spacing[1] }}
+        >
+          <Pencil size={20} color={theme.colors.text.secondary} />
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={deleteSubject}
+          accessibilityRole="button"
+          accessibilityLabel="Usuń przedmiot"
+          hitSlop={8}
+          style={{ padding: theme.spacing[1] }}
+        >
+          <Trash2 size={20} color={theme.colors.status.danger} />
+        </TouchableOpacity>
+      </View>
 
       <View
         style={{
@@ -238,6 +308,16 @@ export function SubjectScreen({ route, navigation }: Props) {
           />
         </View>
       )}
+
+      <RenameModal
+        visible={renameVisible}
+        title="Zmień nazwę przedmiotu"
+        label="Nazwa przedmiotu"
+        initialValue={name}
+        onClose={() => setRenameVisible(false)}
+        onSubmit={renameSubject}
+      />
+      </View>
     </View>
   );
 }

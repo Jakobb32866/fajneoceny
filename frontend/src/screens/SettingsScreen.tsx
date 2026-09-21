@@ -246,7 +246,14 @@ export function SettingsScreen({ navigation }: Props) {
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.surface.app }}>
       <ScrollView
-        contentContainerStyle={{ padding: theme.spacing[4], gap: theme.spacing[4], paddingBottom: theme.spacing[8] }}
+        contentContainerStyle={{
+          padding: theme.spacing[4],
+          gap: theme.spacing[4],
+          paddingBottom: theme.spacing[8],
+          width: '100%',
+          maxWidth: theme.layout.contentMaxWidth,
+          alignSelf: 'center',
+        }}
       >
         <Card style={{ gap: theme.spacing[3] }}>
           <Text.Title>Sesja</Text.Title>

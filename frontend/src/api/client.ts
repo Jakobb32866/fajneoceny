@@ -66,6 +66,8 @@ export const api = {
   createSubject: (name: string, description?: string) =>
     request<Subject>('/api/subjects', { method: 'POST', body: JSON.stringify({ name, description }) }),
   getSubject: (id: string) => request<Subject>(`/api/subjects/${id}`),
+  updateSubject: (id: string, name: string, description?: string) =>
+    request<void>(`/api/subjects/${id}`, { method: 'PUT', body: JSON.stringify({ name, description }) }),
   deleteSubject: (id: string) => request<void>(`/api/subjects/${id}`, { method: 'DELETE' }),
 
   uploadSyllabus: async (subjectId: string, file: { uri: string; name: string; mimeType?: string }) => {
@@ -106,6 +108,8 @@ export const api = {
   createLesson: (subjectId: string, title: string) =>
     request<{ id: string }>(`/api/subjects/${subjectId}/lessons`, { method: 'POST', body: JSON.stringify({ title }) }),
   getLesson: (id: string) => request<LessonDetail>(`/api/lessons/${id}`),
+  updateLesson: (id: string, title: string) =>
+    request<void>(`/api/lessons/${id}`, { method: 'PUT', body: JSON.stringify({ title }) }),
   deleteLesson: (id: string) => request<void>(`/api/lessons/${id}`, { method: 'DELETE' }),
 
   saveNote: (lessonId: string, content: string) =>
