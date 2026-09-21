@@ -116,11 +116,6 @@ courses and proposal review are owner-curated via SQL by design — see
 - [ ] **Community list ordering is done in memory** (SQLite can't `ORDER BY`
       a `DateTimeOffset` column). Fine for course-sized lists; revisit if a
       course ever has thousands of shared lessons.
-- [ ] Backend tests for the feature (`LessonForkServiceTests`,
-      `CommunityVisibilityTests`, `LessonLikeTests`,
-      `CourseProposalReconciliationTests`, `ContentUpdatedAtBumpTests`) were
-      written but deliberately **not run yet** — run `dotnet test
-      backend-api.Tests` and fix anything that surfaces.
 - [ ] The `backend-api-smoke` entry in `.claude/launch.json` (port 8099,
       throwaway `smoke.db`) exists for local end-to-end checks while the
       docker container holds 8080; `backend-api/smoke.db` is gitignored.
