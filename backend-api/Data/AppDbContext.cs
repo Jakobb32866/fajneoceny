@@ -11,7 +11,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, ICurrentUser c
     public DbSet<Subject> Subjects => Set<Subject>();
     public DbSet<Lesson> Lessons => Set<Lesson>();
     public DbSet<Note> Notes => Set<Note>();
-    public DbSet<Source> Sources => Set<Source>();
     public DbSet<GradingScheme> GradingSchemes => Set<GradingScheme>();
     public DbSet<GradingComponent> GradingComponents => Set<GradingComponent>();
     public DbSet<GradeEntry> GradeEntries => Set<GradeEntry>();
@@ -39,12 +38,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, ICurrentUser c
             .HasMany(l => l.Notes)
             .WithOne(n => n.Lesson)
             .HasForeignKey(n => n.LessonId)
-            .OnDelete(DeleteBehavior.Cascade);
-
-        modelBuilder.Entity<Lesson>()
-            .HasMany(l => l.Sources)
-            .WithOne(s => s.Lesson)
-            .HasForeignKey(s => s.LessonId)
             .OnDelete(DeleteBehavior.Cascade);
 
         modelBuilder.Entity<Lesson>()
@@ -111,7 +104,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, ICurrentUser c
         modelBuilder.Entity<Subject>().HasQueryFilter(e => e.UserId == currentUser.UserId);
         modelBuilder.Entity<Lesson>().HasQueryFilter(e => e.UserId == currentUser.UserId);
         modelBuilder.Entity<Note>().HasQueryFilter(e => e.UserId == currentUser.UserId);
-        modelBuilder.Entity<Source>().HasQueryFilter(e => e.UserId == currentUser.UserId);
         modelBuilder.Entity<GradingScheme>().HasQueryFilter(e => e.UserId == currentUser.UserId);
         modelBuilder.Entity<GradingComponent>().HasQueryFilter(e => e.UserId == currentUser.UserId);
         modelBuilder.Entity<GradeEntry>().HasQueryFilter(e => e.UserId == currentUser.UserId);

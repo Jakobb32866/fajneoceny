@@ -100,7 +100,7 @@ data layer.
     endpoints use `FirstOrDefaultAsync(e => e.Id == id)`.)
   - **Ownership stamping**: `SaveChanges[Async]` stamps `UserId` on new
     `IOwnedByUser` entities automatically.
-- Domain aggregate: `Subject → Lesson → {Note, Source, Deck, Flashcard}`,
+- Domain aggregate: `Subject → Lesson → {Note, Deck, Flashcard}`,
   `Subject → GradingScheme → GradingComponent → GradeEntry`, and
   `Flashcard → SpacedRepetitionState`. Cascade deletes are configured to match.
 

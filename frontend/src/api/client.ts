@@ -115,21 +115,6 @@ export const api = {
   saveNote: (lessonId: string, content: string) =>
     request<void>(`/api/lessons/${lessonId}/notes`, { method: 'PUT', body: JSON.stringify({ content }) }),
 
-  addLinkSource: (lessonId: string, title: string, url: string, type: 'YoutubeLink' | 'Link') =>
-    request<void>(`/api/lessons/${lessonId}/sources/link`, {
-      method: 'POST',
-      body: JSON.stringify({ title, url, type }),
-    }),
-
-  addFileSource: async (lessonId: string, file: { uri: string; name: string; mimeType?: string }) => {
-    const form = new FormData();
-    // @ts-expect-error React Native's FormData accepts this file-uri shape.
-    form.append('file', { uri: file.uri, name: file.name, type: file.mimeType ?? 'application/octet-stream' });
-    return request<void>(`/api/lessons/${lessonId}/sources/file`, { method: 'POST', body: form });
-  },
-
-  deleteSource: (id: string) => request<void>(`/api/sources/${id}`, { method: 'DELETE' }),
-
   // Decks
   createDeck: (lessonId: string, name?: string) =>
     request<DeckDto>(`/api/lessons/${lessonId}/decks`, {

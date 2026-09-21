@@ -1,6 +1,5 @@
 export type GradeCategory = 'Project' | 'Exam' | 'Homework' | 'Other';
 export type Difficulty = 'Easy' | 'Medium' | 'Hard';
-export type SourceType = 'Pdf' | 'YoutubeLink' | 'Link';
 
 export interface SubjectSummary {
   id: string;
@@ -26,13 +25,6 @@ export interface LessonSummary {
   flashcardCount: number;
   /** ISO timestamp; may be absent until the backend is rebuilt with this field. */
   createdAt?: string;
-}
-
-export interface SourceDto {
-  id: string;
-  title: string;
-  type: SourceType;
-  location: string;
 }
 
 export interface FlashcardDto {
@@ -114,7 +106,6 @@ export interface LessonDetail {
   title: string;
   order: number;
   noteContent: string | null;
-  sources: SourceDto[];
   decks: DeckDto[];
 }
 

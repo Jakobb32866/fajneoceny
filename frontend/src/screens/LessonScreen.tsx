@@ -1,16 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import * as DocumentPicker from 'expo-document-picker';
 import {
   ActivityIndicator,
   Alert,
-  Linking,
   ScrollView,
   StyleSheet,
   TouchableOpacity,
   View,
 } from 'react-native';
-import { FileText, Link as LinkIcon, Pencil, PenLine, Play, Sparkles, Trash2 } from 'lucide-react-native';
+import { Pencil, PenLine, Play, Sparkles, Trash2 } from 'lucide-react-native';
 import { getCached, invalidate, setCached } from '../api/cache';
 import { cacheKeys } from '../api/cacheKeys';
 import { recordLessonVisit } from '../api/recents';
@@ -18,7 +16,6 @@ import { api } from '../api/client';
 import { useCachedQuery } from '../hooks/useCachedQuery';
 import { RichNoteEditor } from '../components/RichNoteEditor';
 import { RenameModal } from '../components/RenameModal';
-import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Chip } from '../components/ui/Chip';
@@ -28,7 +25,7 @@ import { Text } from '../components/ui/Text';
 import { theme } from '../theme';
 import { confirmAsync } from '../utils/confirm';
 import type { RootStackParamList } from '../navigation/types';
-import type { Difficulty, LessonDetail, SourceType } from '../api/types';
+import type { Difficulty, LessonDetail } from '../api/types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Lesson'>;
 
@@ -37,12 +34,6 @@ const DIFFICULTIES: { value: Difficulty; label: string }[] = [
   { value: 'Medium', label: 'Średni' },
   { value: 'Hard', label: 'Ciężki' },
 ];
-
-const SOURCE_TYPE_LABEL: Record<SourceType, string> = {
-  Pdf: 'PDF',
-  YoutubeLink: 'YouTube',
-  Link: 'Link',
-};
 
 /** Polish plural for "fiszka" (card): 1 fiszka, 2–4 fiszki, 5+ fiszek. */
 function cardWord(n: number): string {
@@ -57,7 +48,6 @@ export function LessonScreen({ route, navigation }: Props) {
   const { lessonId, lessonTitle } = route.params;
   const [noteText, setNoteText] = useState('');
   const [quizModalVisible, setQuizModalVisible] = useState(false);
-  const [addLinkVisible, setAddLinkVisible] = useState(false);
   const [renameVisible, setRenameVisible] = useState(false);
   const [generating, setGenerating] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -104,14 +94,6 @@ export function LessonScreen({ route, navigation }: Props) {
     },
     [],
   );
-
-  const pickPdfSource = async () => {
-    const result = await DocumentPicker.getDocumentAsync({ type: ['application/pdf'] });
-    if (result.canceled) return;
-    const file = result.assets[0];
-    await api.addFileSource(lessonId, { uri: file.uri, name: file.name, mimeType: file.mimeType });
-    reloadLesson();
-  };
 
   const createQuiz = async (count: number, difficulty: Difficulty) => {
     setQuizModalVisible(false);
@@ -228,43 +210,6 @@ export function LessonScreen({ route, navigation }: Props) {
 
       <View>
         <View style={styles.sectionHeader}>
-          <Text.Title>Źródła</Text.Title>
-          <View style={{ flexDirection: 'row', gap: theme.spacing[3] }}>
-            <TouchableOpacity onPress={() => setAddLinkVisible(true)}>
-              <Text.BodySm style={styles.linkAction}>+ link</Text.BodySm>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={pickPdfSource}>
-              <Text.BodySm style={styles.linkAction}>+ PDF</Text.BodySm>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {lesson.sources.length === 0 ? (
-          <Text.BodySm style={styles.empty}>Brak źródeł</Text.BodySm>
-        ) : (
-          lesson.sources.map((s) => (
-            <TouchableOpacity
-              key={s.id}
-              style={styles.sourceRow}
-              onPress={() => s.type !== 'Pdf' && Linking.openURL(s.location)}
-              onLongPress={() => api.deleteSource(s.id).then(reloadLesson)}
-            >
-              {s.type === 'Pdf' ? (
-                <FileText size={18} color={theme.colors.text.secondary} />
-              ) : (
-                <LinkIcon size={18} color={theme.colors.text.secondary} />
-              )}
-              <Text.Body style={styles.sourceTitle} numberOfLines={1}>
-                {s.title}
-              </Text.Body>
-              <Badge label={SOURCE_TYPE_LABEL[s.type]} variant="neutral" />
-            </TouchableOpacity>
-          ))
-        )}
-      </View>
-
-      <View>
-        <View style={styles.sectionHeader}>
           <Text.Title>Talie fiszek ({lesson.decks.length})</Text.Title>
         </View>
 
@@ -357,15 +302,6 @@ export function LessonScreen({ route, navigation }: Props) {
         onClose={() => setQuizModalVisible(false)}
         onSubmit={createQuiz}
       />
-      <AddLinkModal
-        visible={addLinkVisible}
-        onClose={() => setAddLinkVisible(false)}
-        onSubmit={async (title, url, type) => {
-          await api.addLinkSource(lessonId, title, url, type);
-          setAddLinkVisible(false);
-          reloadLesson();
-        }}
-      />
     </ScrollView>
   );
 }
@@ -408,35 +344,6 @@ function QuizConfigModal({
   );
 }
 
-function AddLinkModal({
-  visible,
-  onClose,
-  onSubmit,
-}: {
-  visible: boolean;
-  onClose: () => void;
-  onSubmit: (title: string, url: string, type: 'YoutubeLink' | 'Link') => void;
-}) {
-  const [title, setTitle] = useState('');
-  const [url, setUrl] = useState('');
-
-  const guessType = (u: string): 'YoutubeLink' | 'Link' =>
-    /youtube\.com|youtu\.be/.test(u) ? 'YoutubeLink' : 'Link';
-
-  return (
-    <ModalSheet visible={visible} onClose={onClose} title="Nowe źródło (link)">
-      <TextField placeholder="Tytuł" value={title} onChangeText={setTitle} />
-      <TextField placeholder="https://…" autoCapitalize="none" value={url} onChangeText={setUrl} />
-      <Button
-        title="Dodaj"
-        onPress={() => title.trim() && url.trim() && onSubmit(title.trim(), url.trim(), guessType(url))}
-        disabled={!(title.trim() && url.trim())}
-        fullWidth
-      />
-    </ModalSheet>
-  );
-}
-
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.surface.app },
   center: {
@@ -454,15 +361,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: theme.spacing[2],
   },
-  linkAction: { color: theme.colors.text.link, fontFamily: theme.font.family.sansSemibold },
   empty: { color: theme.colors.text.tertiary },
-  sourceRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.spacing[2],
-    paddingVertical: theme.spacing[2],
-  },
-  sourceTitle: { flex: 1 },
   deckCard: { gap: theme.spacing[2], marginBottom: theme.spacing[2] },
   deckInfo: { gap: 2 },
   deckName: { fontFamily: theme.font.family.sansSemibold },
