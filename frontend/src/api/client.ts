@@ -4,16 +4,21 @@ import { clearToken, getTokenSync } from './token';
 import type {
   AuthResponse,
   AuthUser,
+  CommunityLessonDetail,
+  CommunityLessonPage,
+  CommunitySort,
   DailyCardDto,
   DailyResponse,
   DailySummary,
   DeckDto,
   Difficulty,
   FlashcardDto,
+  ForkResult,
   GradeCategory,
   GradingComponentDto,
   LessonDetail,
   LessonSummary,
+  LikeResult,
   ReviewGrade,
   ReviewResult,
   SrsSettings,
@@ -21,6 +26,8 @@ import type {
   SubjectGradesResponse,
   SubjectSummary,
   SyllabusUploadResult,
+  UniversityCourseDto,
+  UniversityDto,
 } from './types';
 
 // Registered by AuthContext so a 401 from any request (e.g. an expired token
@@ -63,8 +70,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   // Subjects
   listSubjects: () => request<SubjectSummary[]>('/api/subjects'),
-  createSubject: (name: string, description?: string) =>
-    request<Subject>('/api/subjects', { method: 'POST', body: JSON.stringify({ name, description }) }),
+  createSubject: (input: { name?: string; description?: string; universityCourseId?: string; proposeAsCourse?: boolean }) =>
+    request<Subject>('/api/subjects', { method: 'POST', body: JSON.stringify(input) }),
   getSubject: (id: string) => request<Subject>(`/api/subjects/${id}`),
   updateSubject: (id: string, name: string, description?: string) =>
     request<void>(`/api/subjects/${id}`, { method: 'PUT', body: JSON.stringify({ name, description }) }),
@@ -179,16 +186,45 @@ export const api = {
   updateSrsSettings: (settings: SrsSettings) =>
     request<SrsSettings>('/api/settings/srs', { method: 'PUT', body: JSON.stringify(settings) }),
 
+  // Universities / community
+  listUniversities: () => request<UniversityDto[]>('/api/universities'),
+  listMyCourses: () => request<UniversityCourseDto[]>('/api/universities/mine/courses'),
+  setUniversity: (universityId: string) =>
+    request<AuthUser>('/api/settings/university', { method: 'PUT', body: JSON.stringify({ universityId }) }),
+
+  shareLesson: (lessonId: string) => request<void>(`/api/lessons/${lessonId}/share`, { method: 'POST' }),
+  unshareLesson: (lessonId: string) => request<void>(`/api/lessons/${lessonId}/share`, { method: 'DELETE' }),
+  syncFork: (lessonId: string) => request<LessonDetail>(`/api/lessons/${lessonId}/sync-fork`, { method: 'POST' }),
+
+  listCommunityLessons: (courseId: string, params: { sort: CommunitySort; q?: string; page?: number } = { sort: 'likes' }) => {
+    const query = new URLSearchParams({
+      sort: params.sort,
+      ...(params.q ? { q: params.q } : {}),
+      ...(params.page ? { page: String(params.page) } : {}),
+    });
+    return request<CommunityLessonPage>(`/api/community/courses/${courseId}/lessons?${query.toString()}`);
+  },
+
+  getCommunityLesson: (lessonId: string) => request<CommunityLessonDetail>(`/api/community/lessons/${lessonId}`),
+
+  likeCommunityLesson: (lessonId: string) =>
+    request<LikeResult>(`/api/community/lessons/${lessonId}/like`, { method: 'POST' }),
+  unlikeCommunityLesson: (lessonId: string) =>
+    request<LikeResult>(`/api/community/lessons/${lessonId}/like`, { method: 'DELETE' }),
+
+  forkCommunityLesson: (lessonId: string) =>
+    request<ForkResult>(`/api/community/lessons/${lessonId}/fork`, { method: 'POST' }),
+
   // Auth
   auth: {
-    register: (data: { email: string; password: string; firstName: string; lastName: string; schoolName: string }) =>
+    register: (data: { email: string; password: string; firstName: string; lastName: string; schoolName?: string; universityId?: string }) =>
       request<AuthResponse>('/api/auth/register', { method: 'POST', body: JSON.stringify(data) }),
 
     login: (email: string, password: string) =>
       request<AuthResponse>('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
 
-    google: (idToken: string, schoolName?: string) =>
-      request<AuthResponse>('/api/auth/google', { method: 'POST', body: JSON.stringify({ idToken, schoolName }) }),
+    google: (idToken: string, schoolName?: string, universityId?: string) =>
+      request<AuthResponse>('/api/auth/google', { method: 'POST', body: JSON.stringify({ idToken, schoolName, universityId }) }),
 
     me: () => request<AuthUser>('/api/auth/me'),
   },

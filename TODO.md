@@ -84,6 +84,40 @@ moved to the new `Subjects` screen).
       endpoint returning the latest N entries across subjects would replace the
       N-request fan-out.
 
+## Community feature (schema laid, endpoints/UI not built yet)
+
+The university/community *foundation* is in place: domain entities
+(`University`, `UniversityCourse`, `CourseProposal`, `LessonLike`, plus
+`User.UniversityId`, `Subject.UniversityCourseId`, and the sharing/fork/like
+fields on `Lesson`), the `AddUniversitiesAndCommunity` migration, the PJATK
+seed data (`backend-api/Data/UniversitySeeder.cs`), the shared
+`CommunityAuthorization` / `CommunityQueries` helpers
+(`backend-api/Services/Community/`), and the frontend API contract
+(`frontend/src/api/types.ts`, `client.ts`, `cacheKeys.ts`,
+`navigation/types.ts`). None of the actual behavior is implemented yet:
+
+- [ ] **`backend-api/Endpoints/UniversityEndpoints.cs`**: `GET
+      /api/universities`, `GET /api/universities/mine/courses`, `PUT
+      /api/settings/university`. Currently an empty stub.
+- [ ] **`backend-api/Endpoints/CommunityEndpoints.cs`**: share/unshare a
+      lesson, sync-fork, list/get community lessons, like/unlike, fork.
+      Currently an empty stub.
+- [ ] **`SubjectEndpoints.cs`**: `POST /api/subjects` needs to accept the new
+      `{ name?, description?, universityCourseId?, proposeAsCourse? }` shape
+      (the frontend client already sends it) and create a `CourseProposal`
+      when `proposeAsCourse` is set; subject responses need the new
+      `universityCourseId` / `courseName` / `courseCode` / `proposalStatus`
+      fields the frontend types already expect.
+- [ ] **`AuthEndpoints.cs`**: `UserDto`/register/google need
+      `universityId` / `universityName` / `isRecognised`, matching the
+      extended frontend `AuthUser`.
+- [ ] **Frontend UI**: no screens yet. `RootStackParamList` has a
+      `CommunityLesson` route declared for a future screen, but nothing
+      registers it.
+- [ ] University/course rows themselves stay owner-curated via direct SQL
+      (see the doc comments on `University`/`UniversityCourse`/
+      `CourseProposal`) — there's no admin UI, by design.
+
 ## Auth follow-ups (from the original implementation plan, not blocking)
 
 - [ ] Tighten CORS from `AllowAnyOrigin` to the known app origins now that

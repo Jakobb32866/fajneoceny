@@ -251,7 +251,7 @@ export function DashboardScreen({ navigation }: Props) {
         visible={createVisible}
         onClose={() => setCreateVisible(false)}
         onSubmit={async (name, description) => {
-          await api.createSubject(name, description);
+          await api.createSubject({ name, description });
           setCreateVisible(false);
           invalidate(cacheKeys.subjects);
         }}

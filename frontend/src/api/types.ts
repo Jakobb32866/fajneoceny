@@ -1,6 +1,20 @@
 export type GradeCategory = 'Project' | 'Exam' | 'Homework' | 'Other';
 export type Difficulty = 'Easy' | 'Medium' | 'Hard';
 
+export interface UniversityDto {
+  id: string;
+  name: string;
+  shortName: string | null;
+}
+
+export interface UniversityCourseDto {
+  id: string;
+  code: string | null;
+  name: string;
+}
+
+export type CourseProposalStatus = 'Pending' | 'Approved' | 'Rejected';
+
 export interface SubjectSummary {
   id: string;
   name: string;
@@ -9,6 +23,10 @@ export interface SubjectSummary {
   currentEstimatePercent: number | null;
   /** ISO timestamp; may be absent until the backend is rebuilt with this field. */
   createdAt?: string;
+  universityCourseId: string | null;
+  courseName: string | null;
+  courseCode: string | null;
+  proposalStatus: CourseProposalStatus | null;
 }
 
 export interface Subject {
@@ -16,6 +34,10 @@ export interface Subject {
   name: string;
   description: string | null;
   lessons: LessonSummary[];
+  universityCourseId: string | null;
+  courseName: string | null;
+  courseCode: string | null;
+  proposalStatus: CourseProposalStatus | null;
 }
 
 export interface LessonSummary {
@@ -101,12 +123,65 @@ export interface DeckDto {
   flashcards: FlashcardDto[];
 }
 
+export interface ForkedFromDto {
+  lessonId: string;
+  authorName: string;
+  originalStillShared: boolean;
+  hasNewerVersion: boolean;
+}
+
 export interface LessonDetail {
   id: string;
   title: string;
   order: number;
   noteContent: string | null;
   decks: DeckDto[];
+  isShared: boolean;
+  canShare: boolean;
+  likeCount: number;
+  forkedFrom: ForkedFromDto | null;
+}
+
+export type CommunitySort = 'likes' | 'published' | 'updated';
+
+export interface CommunityLessonListItem {
+  id: string;
+  title: string;
+  authorName: string;
+  likeCount: number;
+  likedByMe: boolean;
+  isMine: boolean;
+  deckCount: number;
+  cardCount: number;
+  sharedAt: string;
+  contentUpdatedAt: string;
+}
+
+export interface CommunityLessonPage {
+  items: CommunityLessonListItem[];
+  page: number;
+  pageSize: number;
+  totalCount: number;
+  totalPages: number;
+}
+
+export interface CommunityLessonDetail {
+  id: string;
+  title: string;
+  noteContent: string | null;
+  decks: DeckDto[];
+  authorName: string;
+  likeCount: number;
+  likedByMe: boolean;
+  isMine: boolean;
+  sharedAt: string;
+  contentUpdatedAt: string;
+  courseId: string;
+}
+
+export interface LikeResult {
+  likeCount: number;
+  likedByMe: boolean;
 }
 
 export interface DraftGradingComponent {
@@ -152,9 +227,16 @@ export interface AuthUser {
   firstName: string;
   lastName: string;
   schoolName: string;
+  universityId: string | null;
+  universityName: string | null;
+  isRecognised: boolean;
 }
 
 export interface AuthResponse {
   token: string;
   user: AuthUser;
+}
+
+export interface ForkResult extends LessonSummary {
+  subjectId: string;
 }

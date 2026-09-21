@@ -9,6 +9,7 @@ export type RootStackParamList = {
   DeckEditor: { deckId: string; lessonId: string };
   DailyFlashcards: undefined;
   Settings: undefined;
+  CommunityLesson: { lessonId: string; title: string };
 };
 
 export type QuizConfig = { count: number; difficulty: Difficulty };

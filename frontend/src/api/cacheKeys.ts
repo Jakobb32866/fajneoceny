@@ -17,4 +17,10 @@ export const cacheKeys = {
   dashboardGrades: 'dashboard/grades',
   /** Fallback "last added" lessons for the dashboard when there are no recents. */
   dashboardFallbackLessons: 'dashboard/fallback-lessons',
+  universities: 'universities',
+  myCourses: 'universities/mine/courses',
+  communityCourse: (courseId: string) => `community/course/${courseId}`,
+  communityLessons: (courseId: string, sort: string, q: string, page: number) =>
+    `community/course/${courseId}/lessons/${sort}/${encodeURIComponent(q)}/${page}`,
+  communityLesson: (lessonId: string) => `community/lesson/${lessonId}`,
 } as const;

@@ -103,6 +103,7 @@ using (var scope = app.Services.CreateScope())
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     db.Database.Migrate();
     await DeckBackfill.RunAsync(db);
+    await UniversitySeeder.RunAsync(db);
 }
 
 if (app.Environment.IsDevelopment())
@@ -128,5 +129,7 @@ app.MapLessonEndpoints();
 app.MapDeckEndpoints();
 app.MapFlashcardEndpoints();
 app.MapSettingsEndpoints();
+app.MapUniversityEndpoints();
+app.MapCommunityEndpoints();
 
 app.Run();
