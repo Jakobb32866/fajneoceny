@@ -1,8 +1,11 @@
+using BackendApi.Auth;
 using BackendApi.Data;
 using BackendApi.Domain;
 using Microsoft.EntityFrameworkCore;
 
 namespace BackendApi.Endpoints;
+
+public record SetUniversityRequest(Guid UniversityId);
 
 /// <summary>Full set of user-tunable spaced-repetition settings. Used for both GET response and PUT request.</summary>
 public record SrsSettingsDto(
@@ -41,6 +44,28 @@ public static class SettingsEndpoints
             Apply(settings, dto);
             await db.SaveChangesAsync();
             return Results.Ok(ToDto(settings));
+        });
+
+        // University choice is permanent: once set, it can't be changed here.
+        group.MapPut("/university", async (SetUniversityRequest request, ICurrentUser currentUser, AppDbContext db) =>
+        {
+            var user = await db.Users.Include(u => u.University).FirstOrDefaultAsync(u => u.Id == currentUser.UserId);
+            if (user is null) return Results.NotFound();
+
+            if (user.UniversityId is not null)
+            {
+                return Results.Conflict("University is already set and cannot be changed.");
+            }
+
+            var university = await db.Universities.FirstOrDefaultAsync(u => u.Id == request.UniversityId);
+            if (university is null) return Results.BadRequest("Unknown university.");
+
+            user.UniversityId = university.Id;
+            user.University = university;
+            user.SchoolName = university.Name;
+            await db.SaveChangesAsync();
+
+            return Results.Ok(user.ToDto());
         });
     }
 
