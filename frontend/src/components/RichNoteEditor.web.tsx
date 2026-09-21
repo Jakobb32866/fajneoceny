@@ -17,6 +17,8 @@ export interface RichNoteEditorProps {
   value: string;
   onChangeText: (html: string) => void;
   placeholder?: string;
+  /** Disable editing and hide the toolbar — used for read-only community lesson views. */
+  readOnly?: boolean;
 }
 
 // Inline SVGs (lucide geometry) so the web build has no react-native-svg
@@ -75,7 +77,7 @@ const TOOLBAR = [
  * focused, to avoid resetting the caret). Two of these can coexist — the inline
  * editor and the fullscreen one — sharing the same parent value.
  */
-function QuillHost({ value, onChangeText, placeholder }: RichNoteEditorProps) {
+function QuillHost({ value, onChangeText, placeholder, readOnly = false }: RichNoteEditorProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const quillRef = useRef<Quill | null>(null);
   const lastEmitted = useRef<string>(value);
@@ -86,7 +88,7 @@ function QuillHost({ value, onChangeText, placeholder }: RichNoteEditorProps) {
     const quill = new Quill(hostRef.current, {
       theme: 'snow',
       placeholder: placeholder ?? 'Pisz notatki…',
-      modules: { toolbar: TOOLBAR },
+      modules: { toolbar: readOnly ? false : TOOLBAR },
     });
     quillRef.current = quill;
 
@@ -97,12 +99,16 @@ function QuillHost({ value, onChangeText, placeholder }: RichNoteEditorProps) {
     }
     lastEmitted.current = quill.getText().trim() ? quill.root.innerHTML : '';
 
-    quill.on('text-change', () => {
-      if (applyingExternal.current) return;
-      const html = quill.getText().trim().length === 0 ? '' : quill.root.innerHTML;
-      lastEmitted.current = html;
-      onChangeText(html);
-    });
+    if (readOnly) {
+      quill.disable();
+    } else {
+      quill.on('text-change', () => {
+        if (applyingExternal.current) return;
+        const html = quill.getText().trim().length === 0 ? '' : quill.root.innerHTML;
+        lastEmitted.current = html;
+        onChangeText(html);
+      });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -121,7 +127,7 @@ function QuillHost({ value, onChangeText, placeholder }: RichNoteEditorProps) {
   return <div ref={hostRef} />;
 }
 
-export function RichNoteEditor({ value, onChangeText, placeholder }: RichNoteEditorProps) {
+export function RichNoteEditor({ value, onChangeText, placeholder, readOnly = false }: RichNoteEditorProps) {
   const [fullscreen, setFullscreen] = useState(false);
 
   return (
@@ -135,7 +141,7 @@ export function RichNoteEditor({ value, onChangeText, placeholder }: RichNoteEdi
         >
           <MaximizeIcon />
         </button>
-        <QuillHost value={value} onChangeText={onChangeText} placeholder={placeholder} />
+        <QuillHost value={value} onChangeText={onChangeText} placeholder={placeholder} readOnly={readOnly} />
       </div>
 
       {/* Portal to <body> so the fixed overlay escapes React Navigation's screen
@@ -151,7 +157,7 @@ export function RichNoteEditor({ value, onChangeText, placeholder }: RichNoteEdi
             >
               <CloseIcon />
             </button>
-            <QuillHost value={value} onChangeText={onChangeText} placeholder={placeholder} />
+            <QuillHost value={value} onChangeText={onChangeText} placeholder={placeholder} readOnly={readOnly} />
           </div>,
           document.body,
         )}

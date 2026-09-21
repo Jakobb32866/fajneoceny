@@ -8,8 +8,10 @@ import { ClipboardPaste, FileUp, Pencil, Plus, Trash2, Upload } from 'lucide-rea
 import { recordSubjectVisit } from '../api/recents';
 import { api } from '../api/client';
 import { useCachedQuery } from '../hooks/useCachedQuery';
+import { CommunityLessonList } from '../components/CommunityLessonList';
 import { GradeSheet } from '../components/GradeSheet';
 import { RenameModal } from '../components/RenameModal';
+import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { TextField } from '../components/ui/Input';
 import { ModalSheet } from '../components/ui/ModalSheet';
@@ -17,10 +19,10 @@ import { Text } from '../components/ui/Text';
 import { theme } from '../theme';
 import { confirmAsync } from '../utils/confirm';
 import type { RootStackParamList } from '../navigation/types';
-import type { LessonSummary } from '../api/types';
+import type { LessonSummary, Subject } from '../api/types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Subject'>;
-type Tab = 'lessons' | 'grades';
+type Tab = 'lessons' | 'grades' | 'community';
 
 export function SubjectScreen({ route, navigation }: Props) {
   const { subjectId, subjectName } = route.params;
@@ -41,6 +43,10 @@ export function SubjectScreen({ route, navigation }: Props) {
     api.listLessons(subjectId),
   );
   const lessons = lessonsQuery.data ?? (lessonsQuery.error ? [] : null);
+
+  const subjectQuery = useCachedQuery<Subject>(cacheKeys.subject(subjectId), () => api.getSubject(subjectId));
+  const subject = subjectQuery.data;
+  const isCommunityLinked = !!subject?.universityCourseId;
 
   const onSyllabusLoaded = (count: number) => {
     // An upload rewrites the draft grading components. GradeSheet used to pick
@@ -154,6 +160,19 @@ export function SubjectScreen({ route, navigation }: Props) {
         </TouchableOpacity>
       </View>
 
+      {isCommunityLinked ? (
+        <View style={{ paddingHorizontal: theme.spacing[4], marginTop: theme.spacing[2] }}>
+          <Badge
+            label={`Przedmiot uczelniany · ${subject?.courseCode ?? subject?.courseName}`}
+            variant="brand"
+          />
+        </View>
+      ) : subject?.proposalStatus === 'Pending' ? (
+        <View style={{ paddingHorizontal: theme.spacing[4], marginTop: theme.spacing[2] }}>
+          <Badge label="Zgłoszono jako przedmiot uczelniany — oczekuje na zatwierdzenie" variant="warning" />
+        </View>
+      ) : null}
+
       <View
         style={{
           flexDirection: 'row',
@@ -201,9 +220,30 @@ export function SubjectScreen({ route, navigation }: Props) {
             Arkusz ocen
           </Text.BodySm>
         </Pressable>
+        {isCommunityLinked ? (
+          <Pressable
+            style={{
+              flex: 1,
+              paddingVertical: theme.spacing[2],
+              borderRadius: theme.radius.sm,
+              alignItems: 'center',
+              backgroundColor: tab === 'community' ? theme.colors.brand.default : 'transparent',
+            }}
+            onPress={() => setTab('community')}
+          >
+            <Text.BodySm
+              style={{
+                fontFamily: theme.font.family.sansSemibold,
+                color: tab === 'community' ? theme.colors.brand.onBrand : theme.colors.text.secondary,
+              }}
+            >
+              Społeczność
+            </Text.BodySm>
+          </Pressable>
+        ) : null}
       </View>
 
-      {tab === 'lessons' ? (
+      {tab === 'lessons' && (
         <>
           {lessons === null ? (
             <ActivityIndicator style={{ marginTop: theme.spacing[8] }} />
@@ -274,7 +314,9 @@ export function SubjectScreen({ route, navigation }: Props) {
             }}
           />
         </>
-      ) : (
+      )}
+
+      {tab === 'grades' && (
         <View style={{ flex: 1 }}>
           <View style={{ marginHorizontal: theme.spacing[4], marginTop: theme.spacing[3] }}>
             <Button
@@ -307,6 +349,10 @@ export function SubjectScreen({ route, navigation }: Props) {
             onSubmit={submitPastedSyllabus}
           />
         </View>
+      )}
+
+      {tab === 'community' && subject?.universityCourseId && (
+        <CommunityLessonList courseId={subject.universityCourseId} />
       )}
 
       <RenameModal
