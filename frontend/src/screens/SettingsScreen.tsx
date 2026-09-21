@@ -4,13 +4,18 @@ import { ActivityIndicator, Alert, ScrollView, View } from 'react-native';
 import { invalidate, setCached } from '../api/cache';
 import { cacheKeys } from '../api/cacheKeys';
 import { api } from '../api/client';
+import { ApiError } from '../api/errors';
 import { useCachedQuery } from '../hooks/useCachedQuery';
+import { useAuth } from '../auth/AuthContext';
+import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { TextField } from '../components/ui/Input';
 import { Text } from '../components/ui/Text';
+import { UniversityPicker, type UniversityPickerValue } from '../components/UniversityPicker';
+import { confirmAsync } from '../utils/confirm';
 import { theme } from '../theme';
-import type { SrsSettings } from '../api/types';
+import type { AuthUser, SrsSettings } from '../api/types';
 import type { RootStackParamList } from '../navigation/types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
@@ -185,6 +190,7 @@ function validate(form: FormState): Errors {
 export function SettingsScreen({ navigation }: Props) {
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<FormState>(DEFAULTS);
+  const { user } = useAuth();
 
   const { data: settings, loading, error } = useCachedQuery(cacheKeys.srsSettings, () => api.getSrsSettings());
 
@@ -255,6 +261,8 @@ export function SettingsScreen({ navigation }: Props) {
           alignSelf: 'center',
         }}
       >
+        {user ? <UniversityCard user={user} /> : null}
+
         <Card style={{ gap: theme.spacing[3] }}>
           <Text.Title>Sesja</Text.Title>
 
@@ -459,5 +467,69 @@ export function SettingsScreen({ navigation }: Props) {
         </View>
       </ScrollView>
     </View>
+  );
+}
+
+/**
+ * Lets a student without a recognised university pick one, once — the choice
+ * is permanent, so a recognised (or already free-text-only) user just sees
+ * their current value.
+ */
+function UniversityCard({ user }: { user: AuthUser }) {
+  const { setUniversity } = useAuth();
+  const [draft, setDraft] = useState<UniversityPickerValue>({ universityId: null, schoolName: '' });
+  const [saving, setSaving] = useState(false);
+
+  if (user.universityId) {
+    return (
+      <Card style={{ gap: theme.spacing[2] }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[2] }}>
+          <Text.Title>Uczelnia</Text.Title>
+          <Badge label="Rozpoznana uczelnia" variant="brand" />
+        </View>
+        <Text.Body>{user.universityName}</Text.Body>
+        <Text.BodySm style={{ color: theme.colors.text.tertiary }}>
+          Wybranej uczelni nie można później zmienić.
+        </Text.BodySm>
+      </Card>
+    );
+  }
+
+  async function onSave() {
+    if (!draft.universityId) return;
+    const confirmed = await confirmAsync(
+      'Zapisać uczelnię?',
+      'Wyboru nie można później zmienić.',
+      'Zapisz',
+    );
+    if (!confirmed) return;
+    setSaving(true);
+    try {
+      await setUniversity(draft.universityId);
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409) {
+        Alert.alert('Nie udało się zapisać', 'Uczelnia została już wybrana.');
+      } else {
+        Alert.alert('Nie udało się zapisać', String(e));
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Card style={{ gap: theme.spacing[3] }}>
+      <Text.Title>Uczelnia</Text.Title>
+      {user.schoolName ? (
+        <Text.BodySm style={{ color: theme.colors.text.secondary }}>
+          Obecnie podana szkoła: {user.schoolName}
+        </Text.BodySm>
+      ) : null}
+      <UniversityPicker value={draft} onChange={setDraft} allowFreeText={false} />
+      <Text.BodySm style={{ color: theme.colors.status.warningStrong }}>
+        Wyboru nie można później zmienić.
+      </Text.BodySm>
+      <Button title="Zapisz" onPress={onSave} loading={saving} disabled={!draft.universityId || saving} fullWidth />
+    </Card>
   );
 }

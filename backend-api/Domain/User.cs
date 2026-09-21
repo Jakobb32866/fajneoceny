@@ -10,4 +10,8 @@ public class User
     public string? PasswordHash { get; set; }
     public string? GoogleSubjectId { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+
+    /// <summary>Set once the user picks their university; null means "not recognised" for community features.</summary>
+    public Guid? UniversityId { get; set; }
+    public University? University { get; set; }
 }

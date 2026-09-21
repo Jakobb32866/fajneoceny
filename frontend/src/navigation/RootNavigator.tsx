@@ -1,4 +1,5 @@
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { CommunityLessonScreen } from '../screens/CommunityLessonScreen';
 import { DailyFlashcardsScreen } from '../screens/DailyFlashcardsScreen';
 import { DashboardScreen } from '../screens/DashboardScreen';
 import { DeckEditorScreen } from '../screens/DeckEditorScreen';
@@ -34,6 +35,11 @@ export function RootNavigator() {
         options={{ title: 'Dzisiejsze fiszki' }}
       />
       <Stack.Screen name="Settings" component={SettingsScreen} options={{ title: 'Ustawienia' }} />
+      <Stack.Screen
+        name="CommunityLesson"
+        component={CommunityLessonScreen}
+        options={({ route }) => ({ title: route.params.title })}
+      />
     </Stack.Navigator>
   );
 }

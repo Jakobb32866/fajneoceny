@@ -37,19 +37,14 @@ public static class FlashcardEndpoints
 
             var lesson = await db.Lessons
                 .Include(l => l.Notes)
-                .Include(l => l.Sources)
                 .FirstOrDefaultAsync(l => l.Id == lessonId);
             if (lesson is null) return Results.NotFound();
 
-            var sourceText = string.Join("\n\n", new[]
-                {
-                    string.Join("\n", lesson.Notes.Select(n => HtmlText.Strip(n.Content))),
-                    string.Join("\n", lesson.Sources.Where(s => s.ExtractedText is not null).Select(s => s.ExtractedText)),
-                }.Where(s => !string.IsNullOrWhiteSpace(s)));
+            var sourceText = string.Join("\n", lesson.Notes.Select(n => HtmlText.Strip(n.Content)));
 
             if (string.IsNullOrWhiteSpace(sourceText))
             {
-                return Results.BadRequest("Lesson has no notes or extracted source text to generate a quiz from yet.");
+                return Results.BadRequest("Lesson has no notes to generate a quiz from yet.");
             }
 
             var generated = await generator.GenerateAsync(sourceText, request.Count, request.Difficulty);

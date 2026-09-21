@@ -3,6 +3,7 @@ using System;
 using BackendApi.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,56 +11,14 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace BackendApi.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260921202025_DropSources")]
+    partial class DropSources
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.9");
-
-            modelBuilder.Entity("BackendApi.Domain.CourseProposal", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset?>("AppliedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid?>("CourseId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset?>("ReviewedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("SubjectId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("UniversityId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("SubjectId")
-                        .IsUnique();
-
-                    b.ToTable("CourseProposals");
-                });
 
             modelBuilder.Entity("BackendApi.Domain.Deck", b =>
                 {
@@ -222,32 +181,11 @@ namespace BackendApi.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT");
 
-                    b.Property<DateTimeOffset>("ContentUpdatedAt")
-                        .HasColumnType("TEXT");
-
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("TEXT");
 
-                    b.Property<DateTimeOffset?>("ForkSyncedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ForkedFromAuthorName")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid?>("ForkedFromLessonId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<bool>("IsShared")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("LikeCount")
-                        .HasColumnType("INTEGER");
-
                     b.Property<int>("Order")
                         .HasColumnType("INTEGER");
-
-                    b.Property<DateTimeOffset?>("SharedAt")
-                        .HasColumnType("TEXT");
 
                     b.Property<Guid>("SubjectId")
                         .HasColumnType("TEXT");
@@ -265,29 +203,6 @@ namespace BackendApi.Migrations
                     b.HasIndex("SubjectId");
 
                     b.ToTable("Lessons");
-                });
-
-            modelBuilder.Entity("BackendApi.Domain.LessonLike", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("LessonId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("LessonId", "UserId")
-                        .IsUnique();
-
-                    b.ToTable("LessonLikes");
                 });
 
             modelBuilder.Entity("BackendApi.Domain.Note", b =>
@@ -421,75 +336,12 @@ namespace BackendApi.Migrations
                     b.Property<string>("SyllabusRawText")
                         .HasColumnType("TEXT");
 
-                    b.Property<Guid?>("UniversityCourseId")
-                        .HasColumnType("TEXT");
-
                     b.Property<Guid>("UserId")
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("UniversityCourseId");
-
-                    b.HasIndex("UserId", "UniversityCourseId")
-                        .IsUnique()
-                        .HasFilter("\"UniversityCourseId\" IS NOT NULL");
-
                     b.ToTable("Subjects");
-                });
-
-            modelBuilder.Entity("BackendApi.Domain.University", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ShortName")
-                        .HasMaxLength(40)
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Name")
-                        .IsUnique();
-
-                    b.ToTable("Universities");
-                });
-
-            modelBuilder.Entity("BackendApi.Domain.UniversityCourse", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Code")
-                        .HasMaxLength(20)
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("UniversityId")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("UniversityId");
-
-                    b.ToTable("UniversityCourses");
                 });
 
             modelBuilder.Entity("BackendApi.Domain.User", b =>
@@ -524,15 +376,10 @@ namespace BackendApi.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
-                    b.Property<Guid?>("UniversityId")
-                        .HasColumnType("TEXT");
-
                     b.HasKey("Id");
 
                     b.HasIndex("Email")
                         .IsUnique();
-
-                    b.HasIndex("UniversityId");
 
                     b.ToTable("Users");
                 });
@@ -597,17 +444,6 @@ namespace BackendApi.Migrations
                         .IsUnique();
 
                     b.ToTable("UserSrsSettings");
-                });
-
-            modelBuilder.Entity("BackendApi.Domain.CourseProposal", b =>
-                {
-                    b.HasOne("BackendApi.Domain.Subject", "Subject")
-                        .WithMany()
-                        .HasForeignKey("SubjectId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Subject");
                 });
 
             modelBuilder.Entity("BackendApi.Domain.Deck", b =>
@@ -683,17 +519,6 @@ namespace BackendApi.Migrations
                     b.Navigation("Subject");
                 });
 
-            modelBuilder.Entity("BackendApi.Domain.LessonLike", b =>
-                {
-                    b.HasOne("BackendApi.Domain.Lesson", "Lesson")
-                        .WithMany()
-                        .HasForeignKey("LessonId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Lesson");
-                });
-
             modelBuilder.Entity("BackendApi.Domain.Note", b =>
                 {
                     b.HasOne("BackendApi.Domain.Lesson", "Lesson")
@@ -725,37 +550,6 @@ namespace BackendApi.Migrations
                         .IsRequired();
 
                     b.Navigation("Flashcard");
-                });
-
-            modelBuilder.Entity("BackendApi.Domain.Subject", b =>
-                {
-                    b.HasOne("BackendApi.Domain.UniversityCourse", "UniversityCourse")
-                        .WithMany()
-                        .HasForeignKey("UniversityCourseId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.Navigation("UniversityCourse");
-                });
-
-            modelBuilder.Entity("BackendApi.Domain.UniversityCourse", b =>
-                {
-                    b.HasOne("BackendApi.Domain.University", "University")
-                        .WithMany("Courses")
-                        .HasForeignKey("UniversityId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("University");
-                });
-
-            modelBuilder.Entity("BackendApi.Domain.User", b =>
-                {
-                    b.HasOne("BackendApi.Domain.University", "University")
-                        .WithMany()
-                        .HasForeignKey("UniversityId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.Navigation("University");
                 });
 
             modelBuilder.Entity("BackendApi.Domain.Deck", b =>
@@ -792,11 +586,6 @@ namespace BackendApi.Migrations
                     b.Navigation("GradingScheme");
 
                     b.Navigation("Lessons");
-                });
-
-            modelBuilder.Entity("BackendApi.Domain.University", b =>
-                {
-                    b.Navigation("Courses");
                 });
 #pragma warning restore 612, 618
         }

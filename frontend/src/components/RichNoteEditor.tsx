@@ -226,6 +226,7 @@ interface EditorBodyProps {
   onToggleMode: () => void;
   fullscreen: boolean;
   onToggleFullscreen: () => void;
+  readOnly?: boolean;
 }
 
 function EditorBody({
@@ -236,6 +237,7 @@ function EditorBody({
   onToggleMode,
   fullscreen,
   onToggleFullscreen,
+  readOnly = false,
 }: EditorBodyProps) {
   const inputRef = useRef<TextInput>(null);
   const selectionRef = useRef<Selection>({ start: value.length, end: value.length });
@@ -267,20 +269,24 @@ function EditorBody({
   return (
     <View style={[styles.wrapper, fullscreen && styles.wrapperFullscreen]}>
       <View style={styles.headerRow}>
-        <View style={styles.modeToggle}>
-          <TouchableOpacity
-            style={[styles.modeButton, mode === 'edit' && styles.modeButtonActive]}
-            onPress={() => mode !== 'edit' && onToggleMode()}
-          >
-            <Text style={mode === 'edit' ? styles.modeTextActive : styles.modeText}>Edycja</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.modeButton, mode === 'preview' && styles.modeButtonActive]}
-            onPress={() => mode !== 'preview' && onToggleMode()}
-          >
-            <Text style={mode === 'preview' ? styles.modeTextActive : styles.modeText}>Podgląd</Text>
-          </TouchableOpacity>
-        </View>
+        {readOnly ? (
+          <View />
+        ) : (
+          <View style={styles.modeToggle}>
+            <TouchableOpacity
+              style={[styles.modeButton, mode === 'edit' && styles.modeButtonActive]}
+              onPress={() => mode !== 'edit' && onToggleMode()}
+            >
+              <Text style={mode === 'edit' ? styles.modeTextActive : styles.modeText}>Edycja</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.modeButton, mode === 'preview' && styles.modeButtonActive]}
+              onPress={() => mode !== 'preview' && onToggleMode()}
+            >
+              <Text style={mode === 'preview' ? styles.modeTextActive : styles.modeText}>Podgląd</Text>
+            </TouchableOpacity>
+          </View>
+        )}
         <TouchableOpacity
           style={styles.fullscreenButton}
           onPress={onToggleFullscreen}
@@ -295,7 +301,7 @@ function EditorBody({
         </TouchableOpacity>
       </View>
 
-      {mode === 'edit' && (
+      {!readOnly && mode === 'edit' && (
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -357,12 +363,15 @@ export interface RichNoteEditorProps {
   value: string;
   onChangeText: (text: string) => void;
   placeholder?: string;
+  /** Force preview-only rendering, hiding the toolbar and the edit/preview toggle. */
+  readOnly?: boolean;
 }
 
-export function RichNoteEditor({ value, onChangeText, placeholder }: RichNoteEditorProps) {
+export function RichNoteEditor({ value, onChangeText, placeholder, readOnly = false }: RichNoteEditorProps) {
   const [fullscreen, setFullscreen] = useState(false);
   const [mode, setMode] = useState<'edit' | 'preview'>('edit');
   const toggleMode = () => setMode((m) => (m === 'edit' ? 'preview' : 'edit'));
+  const effectiveMode = readOnly ? 'preview' : mode;
 
   const body = useMemo(
     () => (fs: boolean) => (
@@ -370,13 +379,14 @@ export function RichNoteEditor({ value, onChangeText, placeholder }: RichNoteEdi
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}
-        mode={mode}
+        mode={effectiveMode}
         onToggleMode={toggleMode}
         fullscreen={fs}
         onToggleFullscreen={() => setFullscreen((f) => !f)}
+        readOnly={readOnly}
       />
     ),
-    [value, onChangeText, placeholder, mode],
+    [value, onChangeText, placeholder, effectiveMode, readOnly],
   );
 
   return (

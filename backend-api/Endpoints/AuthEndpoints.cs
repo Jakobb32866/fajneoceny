@@ -7,15 +7,22 @@ using Microsoft.EntityFrameworkCore;
 
 namespace BackendApi.Endpoints;
 
-public record RegisterRequest(string Email, string Password, string FirstName, string LastName, string SchoolName);
+public record RegisterRequest(string Email, string Password, string FirstName, string LastName, string? SchoolName, Guid? UniversityId);
 public record LoginRequest(string Email, string Password);
-public record GoogleAuthRequest(string IdToken, string? SchoolName);
-public record UserDto(Guid Id, string Email, string FirstName, string LastName, string SchoolName);
+public record GoogleAuthRequest(string IdToken, string? SchoolName, Guid? UniversityId);
+public record UserDto(Guid Id, string Email, string FirstName, string LastName, string SchoolName, Guid? UniversityId, string? UniversityName, bool IsRecognised);
 public record AuthResponse(string Token, UserDto User);
 
 public static class AuthEndpoints
 {
-    private static UserDto ToDto(this User user) => new(user.Id, user.Email, user.FirstName, user.LastName, user.SchoolName);
+    /// <summary>
+    /// Projects a User to its DTO. Relies on the University navigation being
+    /// loaded (via Include, or assigned in-memory on a freshly created user)
+    /// so this stays synchronous and reusable across endpoints/files.
+    /// </summary>
+    internal static UserDto ToDto(this User user) => new(
+        user.Id, user.Email, user.FirstName, user.LastName, user.SchoolName,
+        user.UniversityId, user.University?.Name, user.UniversityId != null);
 
     public static void MapAuthEndpoints(this IEndpointRouteBuilder app)
     {
@@ -28,10 +35,23 @@ public static class AuthEndpoints
             JwtTokenService jwt) =>
         {
             if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Password)
-                || string.IsNullOrWhiteSpace(request.FirstName) || string.IsNullOrWhiteSpace(request.LastName)
-                || string.IsNullOrWhiteSpace(request.SchoolName))
+                || string.IsNullOrWhiteSpace(request.FirstName) || string.IsNullOrWhiteSpace(request.LastName))
             {
-                return Results.BadRequest("Email, password, first name, last name and school name are required.");
+                return Results.BadRequest("Email, password, first name and last name are required.");
+            }
+
+            var hasUniversityId = request.UniversityId.HasValue;
+            var hasSchoolName = !string.IsNullOrWhiteSpace(request.SchoolName);
+            if (hasUniversityId == hasSchoolName)
+            {
+                return Results.BadRequest("Provide exactly one of university or school name.");
+            }
+
+            University? university = null;
+            if (hasUniversityId)
+            {
+                university = await db.Universities.FirstOrDefaultAsync(u => u.Id == request.UniversityId!.Value);
+                if (university is null) return Results.BadRequest("Unknown university.");
             }
 
             var email = request.Email.Trim().ToLowerInvariant();
@@ -45,8 +65,19 @@ public static class AuthEndpoints
                 Email = email,
                 FirstName = request.FirstName.Trim(),
                 LastName = request.LastName.Trim(),
-                SchoolName = request.SchoolName.Trim(),
             };
+
+            if (university is not null)
+            {
+                user.UniversityId = university.Id;
+                user.University = university;
+                user.SchoolName = university.Name;
+            }
+            else
+            {
+                user.SchoolName = request.SchoolName!.Trim();
+            }
+
             user.PasswordHash = hasher.HashPassword(user, request.Password);
 
             db.Users.Add(user);
@@ -63,7 +94,7 @@ public static class AuthEndpoints
             JwtTokenService jwt) =>
         {
             var email = request.Email.Trim().ToLowerInvariant();
-            var user = await db.Users.FirstOrDefaultAsync(u => u.Email == email);
+            var user = await db.Users.Include(u => u.University).FirstOrDefaultAsync(u => u.Email == email);
             if (user is null || user.PasswordHash is null)
             {
                 return Results.Unauthorized();
@@ -95,20 +126,35 @@ public static class AuthEndpoints
                 return Results.Unauthorized();
             }
 
+            var hasUniversityId = request.UniversityId.HasValue;
+            var hasSchoolName = !string.IsNullOrWhiteSpace(request.SchoolName);
+            if (hasUniversityId && hasSchoolName)
+            {
+                return Results.BadRequest("Provide either a university or a school name, not both.");
+            }
+
+            University? university = null;
+            if (hasUniversityId)
+            {
+                university = await db.Universities.FirstOrDefaultAsync(u => u.Id == request.UniversityId!.Value);
+                if (university is null) return Results.BadRequest("Unknown university.");
+            }
+
             var email = profile.Email.Trim().ToLowerInvariant();
-            var user = await db.Users.FirstOrDefaultAsync(u => u.GoogleSubjectId == profile.Subject);
+            var user = await db.Users.Include(u => u.University).FirstOrDefaultAsync(u => u.GoogleSubjectId == profile.Subject);
 
             if (user is null)
             {
                 // Link an existing password-based account with the same email.
-                user = await db.Users.FirstOrDefaultAsync(u => u.Email == email);
+                user = await db.Users.Include(u => u.University).FirstOrDefaultAsync(u => u.Email == email);
                 if (user is not null)
                 {
                     user.GoogleSubjectId = profile.Subject;
                 }
             }
 
-            if (user is null)
+            var isNewUser = user is null;
+            if (isNewUser)
             {
                 user = new User
                 {
@@ -116,20 +162,41 @@ public static class AuthEndpoints
                     Email = email,
                     FirstName = profile.GivenName ?? string.Empty,
                     LastName = profile.FamilyName ?? string.Empty,
-                    SchoolName = request.SchoolName ?? string.Empty,
                 };
                 db.Users.Add(user);
             }
 
+            // Set the university/school on a brand-new user, and also on an
+            // existing user who has never set one (today this branch only
+            // ran for new users). Never overwrite a choice already made —
+            // the university is permanent (see PUT /api/settings/university).
+            var shouldSetSchool = isNewUser || (user!.UniversityId is null && string.IsNullOrWhiteSpace(user.SchoolName));
+            if (shouldSetSchool)
+            {
+                if (university is not null)
+                {
+                    user!.UniversityId = university.Id;
+                    user.University = university;
+                    user.SchoolName = university.Name;
+                }
+                else if (hasSchoolName)
+                {
+                    user!.SchoolName = request.SchoolName!.Trim();
+                }
+                // If neither was supplied, leave both empty (for a new user) or
+                // untouched (for an existing schoolless user) — the client will
+                // re-call once it has collected the school/university info.
+            }
+
             await db.SaveChangesAsync();
 
-            var token = jwt.IssueToken(user);
-            return Results.Ok(new AuthResponse(token, user.ToDto()));
+            var token = jwt.IssueToken(user!);
+            return Results.Ok(new AuthResponse(token, user!.ToDto()));
         });
 
         group.MapGet("/me", async (ICurrentUser currentUser, AppDbContext db) =>
         {
-            var user = await db.Users.FindAsync(currentUser.UserId);
+            var user = await db.Users.Include(u => u.University).FirstOrDefaultAsync(u => u.Id == currentUser.UserId);
             return user is null ? Results.NotFound() : Results.Ok(user.ToDto());
         }).RequireAuthorization();
     }

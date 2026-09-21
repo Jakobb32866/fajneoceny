@@ -43,7 +43,14 @@ export function SubjectsScreen({ navigation }: Props) {
               onPress={() => navigation.navigate('Subject', { subjectId: item.id, subjectName: item.name })}
             >
               <View style={{ flex: 1 }}>
-                <Text.BodyLg style={{ fontFamily: theme.font.family.sansSemibold }}>{item.name}</Text.BodyLg>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[2] }}>
+                  <Text.BodyLg style={{ fontFamily: theme.font.family.sansSemibold }}>{item.name}</Text.BodyLg>
+                  {item.universityCourseId ? (
+                    <Badge label={item.courseCode ?? 'Uczelniany'} variant="brand" />
+                  ) : item.proposalStatus === 'Pending' ? (
+                    <Badge label="Oczekuje" variant="warning" />
+                  ) : null}
+                </View>
                 <Text.BodySm style={{ color: theme.colors.text.secondary, marginTop: theme.spacing[1] }}>
                   {item.lessonCount} lekcji
                 </Text.BodySm>
@@ -73,10 +80,14 @@ export function SubjectsScreen({ navigation }: Props) {
       <CreateSubjectModal
         visible={createVisible}
         onClose={() => setCreateVisible(false)}
-        onSubmit={async (name, description) => {
-          await api.createSubject(name, description);
+        subscribedCourseIds={(subjects ?? [])
+          .map((s) => s.universityCourseId)
+          .filter((id): id is string => id !== null)}
+        onSubmit={async (input) => {
+          await api.createSubject(input);
           setCreateVisible(false);
           invalidate(cacheKeys.subjects);
+          invalidate(cacheKeys.myCourses);
         }}
       />
     </View>

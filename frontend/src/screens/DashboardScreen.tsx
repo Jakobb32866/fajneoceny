@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import {
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -9,7 +10,7 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
-import { ArrowRight, Award, BookOpen, FileText, Layers, Plus } from 'lucide-react-native';
+import { ArrowRight, Award, BookOpen, FileText, Layers, Plus, X } from 'lucide-react-native';
 import { fetchCached, invalidate } from '../api/cache';
 import { cacheKeys } from '../api/cacheKeys';
 import { api } from '../api/client';
@@ -123,10 +124,33 @@ async function fetchLastAddedLessons(subjects: SubjectSummary[], need: number): 
     .map((l) => ({ lessonId: l.id, lessonTitle: l.title, visitedAt: 0 }));
 }
 
+// Persists per-user dismissal of the "pick a university" notice. Web keeps it
+// in localStorage (mirrors src/api/token.ts); native has no cheap sync
+// storage for this low-stakes flag, so it just lives in memory for the
+// session — the notice can reappear on the next app launch, which is fine.
+const DISMISSED_KEY_PREFIX = 'fajneoceny_university_notice_dismissed_';
+const inMemoryDismissed = new Set<string>();
+
+function isUniversityNoticeDismissed(userId: string): boolean {
+  if (Platform.OS === 'web') {
+    return typeof localStorage !== 'undefined' && localStorage.getItem(DISMISSED_KEY_PREFIX + userId) === '1';
+  }
+  return inMemoryDismissed.has(userId);
+}
+
+function dismissUniversityNotice(userId: string): void {
+  if (Platform.OS === 'web') {
+    if (typeof localStorage !== 'undefined') localStorage.setItem(DISMISSED_KEY_PREFIX + userId, '1');
+    return;
+  }
+  inMemoryDismissed.add(userId);
+}
+
 export function DashboardScreen({ navigation }: Props) {
   const [createVisible, setCreateVisible] = useState(false);
   const { user, signOut } = useAuth();
   const recents = useRecents();
+  const [noticeDismissed, setNoticeDismissed] = useState(() => (user ? isUniversityNoticeDismissed(user.id) : true));
   const { width } = useWindowDimensions();
   const isWide = width >= WIDE_BREAKPOINT;
 
@@ -173,6 +197,9 @@ export function DashboardScreen({ navigation }: Props) {
     (fallbackSubject
       ? { subjectId: fallbackSubject.id, subjectName: fallbackSubject.name, visitedAt: 0 }
       : null);
+  // RecentSubject (persisted separately) doesn't carry course info, so look the
+  // full summary up in the already-fetched subjects list for the tile's badge.
+  const recentSubjectSummary = subjects?.find((s) => s.id === recentSubject?.subjectId) ?? null;
 
   const cards = {
     daily: (style: StyleProp<ViewStyle>) => (
@@ -187,7 +214,7 @@ export function DashboardScreen({ navigation }: Props) {
       <LessonSlot lesson={lesson} navigation={navigation} style={style} />
     ),
     subject: (style: StyleProp<ViewStyle>) => (
-      <SubjectSlot subject={recentSubject} navigation={navigation} style={style} />
+      <SubjectSlot subject={recentSubject} summary={recentSubjectSummary} navigation={navigation} style={style} />
     ),
     add: (style: StyleProp<ViewStyle>) => <AddTile style={style} onPress={() => setCreateVisible(true)} />,
     grades: (style: StyleProp<ViewStyle>) => (
@@ -209,6 +236,16 @@ export function DashboardScreen({ navigation }: Props) {
           onSignOut={signOut}
         />
       )}
+
+      {user && !user.universityId && !noticeDismissed ? (
+        <UniversityNotice
+          onGoToSettings={() => navigation.navigate('Settings')}
+          onDismiss={() => {
+            dismissUniversityNotice(user.id);
+            setNoticeDismissed(true);
+          }}
+        />
+      ) : null}
 
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         {isWide ? (
@@ -250,12 +287,54 @@ export function DashboardScreen({ navigation }: Props) {
       <CreateSubjectModal
         visible={createVisible}
         onClose={() => setCreateVisible(false)}
-        onSubmit={async (name, description) => {
-          await api.createSubject(name, description);
+        subscribedCourseIds={(subjects ?? [])
+          .map((s) => s.universityCourseId)
+          .filter((id): id is string => id !== null)}
+        onSubmit={async (input) => {
+          await api.createSubject(input);
           setCreateVisible(false);
           invalidate(cacheKeys.subjects);
+          invalidate(cacheKeys.myCourses);
         }}
       />
+    </View>
+  );
+}
+
+/* ------------------------------ Notices ---------------------------------- */
+
+function UniversityNotice({
+  onGoToSettings,
+  onDismiss,
+}: {
+  onGoToSettings: () => void;
+  onDismiss: () => void;
+}) {
+  return (
+    <View
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: theme.spacing[3],
+        backgroundColor: theme.colors.accent.soft,
+        borderRadius: theme.radius.md,
+        paddingVertical: theme.spacing[3],
+        paddingHorizontal: theme.spacing[4],
+        marginHorizontal: theme.spacing[4],
+        marginTop: theme.spacing[3],
+      }}
+    >
+      <Text.BodySm style={{ flex: 1, color: theme.colors.accent.active }}>
+        Wybierz uczelnię w ustawieniach, aby korzystać ze Społeczności.
+      </Text.BodySm>
+      <Pressable onPress={onGoToSettings} hitSlop={8}>
+        <Text.BodySm style={{ color: theme.colors.accent.active, fontFamily: theme.font.family.sansSemibold }}>
+          Przejdź
+        </Text.BodySm>
+      </Pressable>
+      <Pressable onPress={onDismiss} hitSlop={8}>
+        <X size={16} color={theme.colors.accent.active} />
+      </Pressable>
     </View>
   );
 }
@@ -331,10 +410,12 @@ function LessonSlot({
 
 function SubjectSlot({
   subject,
+  summary,
   navigation,
   style,
 }: {
   subject: RecentSubject | null;
+  summary: SubjectSummary | null;
   navigation: Nav;
   style: StyleProp<ViewStyle>;
 }) {
@@ -362,8 +443,28 @@ function SubjectSlot({
       >
         {subject.subjectName}
       </Text.HeadlineMd>
+      <SubjectCourseBadge summary={summary} />
     </Pressable>
   );
+}
+
+/** Subtle badge shown when a subject is linked to a university course, or its
+ * "propose as missing course" is still pending review. */
+function SubjectCourseBadge({ summary }: { summary: SubjectSummary | null }) {
+  if (!summary) return null;
+  if (summary.universityCourseId) {
+    return (
+      <Badge
+        label={summary.courseCode ?? 'Uczelniany'}
+        variant="brand"
+        style={{ marginTop: theme.spacing[2] }}
+      />
+    );
+  }
+  if (summary.proposalStatus === 'Pending') {
+    return <Badge label="Oczekuje" variant="warning" style={{ marginTop: theme.spacing[2] }} />;
+  }
+  return null;
 }
 
 function AddTile({ onPress, style }: { onPress: () => void; style: StyleProp<ViewStyle> }) {

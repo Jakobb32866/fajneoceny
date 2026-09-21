@@ -11,6 +11,10 @@ public class Subject : IOwnedByUser
     public string? SyllabusFileName { get; set; }
     public string? SyllabusRawText { get; set; }
 
+    /// <summary>Set when the subject is linked to a shared university course (directly, or via an approved CourseProposal).</summary>
+    public Guid? UniversityCourseId { get; set; }
+    public UniversityCourse? UniversityCourse { get; set; }
+
     public List<Lesson> Lessons { get; set; } = [];
     public GradingScheme? GradingScheme { get; set; }
 }

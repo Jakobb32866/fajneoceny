@@ -1,14 +1,19 @@
+using BackendApi.Auth;
 using BackendApi.Data;
 using BackendApi.Domain;
+using BackendApi.Services.Community;
 using BackendApi.Services.Grading;
 using BackendApi.Services.Storage;
 using Microsoft.EntityFrameworkCore;
 
 namespace BackendApi.Endpoints;
 
-public record CreateSubjectRequest(string Name, string? Description);
+public record CreateSubjectRequest(string? Name, string? Description, Guid? UniversityCourseId, bool? ProposeAsCourse);
 public record UpdateSubjectRequest(string Name, string? Description);
-public record SubjectSummary(Guid Id, string Name, string? Description, int LessonCount, double? CurrentEstimatePercent, DateTimeOffset CreatedAt);
+public record SubjectSummary(Guid Id, string Name, string? Description, int LessonCount, double? CurrentEstimatePercent, DateTimeOffset CreatedAt,
+    Guid? UniversityCourseId, string? CourseName, string? CourseCode, CourseProposalStatus? ProposalStatus);
+public record SubjectDetail(Guid Id, string Name, string? Description, List<LessonSummary> Lessons,
+    Guid? UniversityCourseId, string? CourseName, string? CourseCode, CourseProposalStatus? ProposalStatus);
 public record DraftGradingComponentDto(string Name, GradeCategory Category, double WeightPercent);
 public record SyllabusUploadResult(Guid SubjectId, string RawTextPreview, List<DraftGradingComponentDto> DraftComponents);
 public record SyllabusTextRequest(string Text);
@@ -67,10 +72,19 @@ public static class SubjectEndpoints
 
         group.MapGet("/", async (AppDbContext db, IGradeCalculationService gradeCalc) =>
         {
+            await CourseProposalReconciliation.ReconcileAsync(db);
+
             var subjects = await db.Subjects
                 .Include(s => s.Lessons)
                 .Include(s => s.GradingScheme).ThenInclude(g => g!.Components).ThenInclude(c => c.Entries)
+                .Include(s => s.UniversityCourse)
                 .ToListAsync();
+
+            var subjectIds = subjects.Select(s => s.Id).ToList();
+            var proposalStatusBySubject = await db.CourseProposals
+                .Where(p => subjectIds.Contains(p.SubjectId))
+                .Select(p => new { p.SubjectId, p.Status })
+                .ToDictionaryAsync(p => p.SubjectId, p => (CourseProposalStatus?)p.Status);
 
             return subjects.Select(s => new SubjectSummary(
                 s.Id,
@@ -78,23 +92,102 @@ public static class SubjectEndpoints
                 s.Description,
                 s.Lessons.Count,
                 s.GradingScheme is null ? null : gradeCalc.Calculate(s.GradingScheme).CurrentEstimatePercent,
-                s.CreatedAt));
+                s.CreatedAt,
+                s.UniversityCourseId,
+                s.UniversityCourse?.Name,
+                s.UniversityCourse?.Code,
+                proposalStatusBySubject.GetValueOrDefault(s.Id)));
         });
 
-        group.MapPost("/", async (CreateSubjectRequest request, AppDbContext db) =>
+        group.MapPost("/", async (CreateSubjectRequest request, ICurrentUser currentUser, AppDbContext db) =>
         {
-            var subject = new Subject { Name = request.Name, Description = request.Description };
-            db.Subjects.Add(subject);
+            if (request.UniversityCourseId is not null && request.ProposeAsCourse == true)
+            {
+                return Results.BadRequest("Provide either a course to join or a proposal to create, not both.");
+            }
+
+            var name = request.Name?.Trim();
+
+            // Joining an existing shared course.
+            if (request.UniversityCourseId is { } courseId)
+            {
+                if (!await CommunityAuthorization.CanAccessCourseAsync(db, currentUser.UserId, courseId))
+                {
+                    return Results.BadRequest("Unknown course.");
+                }
+
+                if (await db.Subjects.AnyAsync(s => s.UniversityCourseId == courseId))
+                {
+                    return Results.Conflict("You already have a subject linked to this course.");
+                }
+
+                var course = await db.UniversityCourses.FirstAsync(c => c.Id == courseId);
+                var subject = new Subject
+                {
+                    Name = string.IsNullOrEmpty(name) ? course.Name : name,
+                    Description = request.Description?.Trim(),
+                    UniversityCourseId = course.Id,
+                };
+                db.Subjects.Add(subject);
+                await db.SaveChangesAsync();
+                return Results.Created($"/api/subjects/{subject.Id}", subject);
+            }
+
+            // Proposing a brand-new course to be added to the university's catalogue.
+            if (request.ProposeAsCourse == true)
+            {
+                var university = await CommunityAuthorization.GetUniversityAsync(db, currentUser.UserId);
+                if (university is null) return Results.BadRequest("You must set your university before proposing a course.");
+                if (string.IsNullOrEmpty(name)) return Results.BadRequest("Name is required.");
+
+                var subject = new Subject { Name = name, Description = request.Description?.Trim() };
+                db.Subjects.Add(subject);
+                await db.SaveChangesAsync();
+
+                db.CourseProposals.Add(new CourseProposal
+                {
+                    UniversityId = university.Id,
+                    SubjectId = subject.Id,
+                    Name = subject.Name,
+                });
+                await db.SaveChangesAsync();
+
+                return Results.Created($"/api/subjects/{subject.Id}", subject);
+            }
+
+            // Plain subject, no community link.
+            if (string.IsNullOrEmpty(name)) return Results.BadRequest("Name is required.");
+
+            var plainSubject = new Subject { Name = name, Description = request.Description?.Trim() };
+            db.Subjects.Add(plainSubject);
             await db.SaveChangesAsync();
-            return Results.Created($"/api/subjects/{subject.Id}", subject);
+            return Results.Created($"/api/subjects/{plainSubject.Id}", plainSubject);
         });
 
         group.MapGet("/{id:guid}", async (Guid id, AppDbContext db) =>
         {
             var subject = await db.Subjects
-                .Include(s => s.Lessons.OrderBy(l => l.Order))
+                .Include(s => s.Lessons.OrderBy(l => l.Order)).ThenInclude(l => l.Flashcards)
+                .Include(s => s.UniversityCourse)
                 .FirstOrDefaultAsync(s => s.Id == id);
-            return subject is null ? Results.NotFound() : Results.Ok(subject);
+            if (subject is null) return Results.NotFound();
+
+            var proposalStatus = await db.CourseProposals
+                .Where(p => p.SubjectId == id)
+                .Select(p => (CourseProposalStatus?)p.Status)
+                .FirstOrDefaultAsync();
+
+            var detail = new SubjectDetail(
+                subject.Id,
+                subject.Name,
+                subject.Description,
+                subject.Lessons.Select(l => new LessonSummary(l.Id, l.Title, l.Order, l.Flashcards.Count, l.CreatedAt)).ToList(),
+                subject.UniversityCourseId,
+                subject.UniversityCourse?.Name,
+                subject.UniversityCourse?.Code,
+                proposalStatus);
+
+            return Results.Ok(detail);
         });
 
         group.MapPut("/{id:guid}", async (Guid id, UpdateSubjectRequest request, AppDbContext db) =>

@@ -84,6 +84,42 @@ moved to the new `Subjects` screen).
       endpoint returning the latest N entries across subjects would replace the
       N-request fan-out.
 
+## Community feature (Społeczność) follow-ups
+
+The community feature (universities, curated courses, course proposals, shared
+lessons with likes, fork + sync) is implemented end-to-end. Universities,
+courses and proposal review are owner-curated via SQL by design — see
+[docs/community-admin-sql.md](docs/community-admin-sql.md). Deferred:
+
+- [ ] **Notifications** ("your proposal was approved/rejected", "someone
+      liked your lesson"). The schema already records what a notifier needs:
+      `CourseProposals.ReviewedAt`/`AppliedAt` and `LessonLikes.CreatedAt`.
+      Suggested shape: a `Notifications` table (`UserId`, `Kind`, `Payload`,
+      `CreatedAt`, `ReadAt`) filled by the reconciliation step and the like
+      endpoint, plus `GET /api/notifications` and an unread badge in
+      `AppHeader`. Push (`expo-notifications`) can piggyback on it later.
+- [ ] **Note format across platforms.** The web editor stores Quill HTML,
+      the native editor stores markdown, and `Note.Content` has no format
+      marker. This predates community sharing, but a note authored on one
+      platform now renders as raw markup for a classmate on the other.
+      Options: store a `Format` column, or convert to one canonical format on
+      save.
+- [ ] **Cross-user HTML.** Shared note HTML is rendered by Quill (web) which
+      normalises it through its clipboard matcher, so scripts are dropped,
+      but there is no server-side sanitiser. Add one (e.g. HtmlSanitizer) if
+      the note is ever rendered outside Quill.
+- [ ] **Free-text schools are never auto-linked.** When a university is added
+      to the curated list, users who typed that name still have
+      `UniversityId = NULL` until they pick it in Settings. A one-off SQL
+      `UPDATE Users SET UniversityId = … WHERE lower(SchoolName) = …` is the
+      manual workaround.
+- [ ] **Community list ordering is done in memory** (SQLite can't `ORDER BY`
+      a `DateTimeOffset` column). Fine for course-sized lists; revisit if a
+      course ever has thousands of shared lessons.
+- [ ] The `backend-api-smoke` entry in `.claude/launch.json` (port 8099,
+      throwaway `smoke.db`) exists for local end-to-end checks while the
+      docker container holds 8080; `backend-api/smoke.db` is gitignored.
+
 ## Auth follow-ups (from the original implementation plan, not blocking)
 
 - [ ] Tighten CORS from `AllowAnyOrigin` to the known app origins now that
