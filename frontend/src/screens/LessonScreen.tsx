@@ -5,6 +5,7 @@ import {
   Alert,
   ScrollView,
   StyleSheet,
+  Switch,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -13,6 +14,7 @@ import { getCached, invalidate, setCached } from '../api/cache';
 import { cacheKeys } from '../api/cacheKeys';
 import { recordLessonVisit } from '../api/recents';
 import { api } from '../api/client';
+import { ApiError } from '../api/errors';
 import { useCachedQuery } from '../hooks/useCachedQuery';
 import { RichNoteEditor } from '../components/RichNoteEditor';
 import { RenameModal } from '../components/RenameModal';
@@ -162,6 +164,44 @@ export function LessonScreen({ route, navigation }: Props) {
     }
   };
 
+  const toggleShare = async (next: boolean) => {
+    try {
+      if (next) {
+        await api.shareLesson(lessonId);
+      } else {
+        await api.unshareLesson(lessonId);
+      }
+      const cached = getCached<LessonDetail>(lessonKey);
+      if (cached) setCached(lessonKey, { ...cached, isShared: next });
+      // No courseId is available here to target a single community list, so
+      // sweep every cached community entry — it's just a background refetch.
+      invalidate('community');
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 400) {
+        Alert.alert('Nie można udostępnić', 'Dodaj treść notatki lub talię z fiszkami.');
+      } else {
+        Alert.alert('Nie udało się zmienić udostępniania', String(e));
+      }
+    }
+  };
+
+  const syncFork = async () => {
+    const ok = await confirmAsync(
+      'Zsynchronizować z oryginałem?',
+      'Obecna treść notatki i talie w tej lekcji zostaną zastąpione wersją autora.',
+      'Synchronizuj',
+    );
+    if (!ok) return;
+    try {
+      const result = await api.syncFork(lessonId);
+      setCached(lessonKey, result);
+      // Re-seed the note editor from the synced content on the next render.
+      seeded.current = false;
+    } catch (e) {
+      Alert.alert('Nie udało się zsynchronizować', String(e));
+    }
+  };
+
   if (!lesson) {
     return (
       <View style={styles.center}>
@@ -202,6 +242,48 @@ export function LessonScreen({ route, navigation }: Props) {
           <Trash2 size={20} color={theme.colors.status.danger} />
         </TouchableOpacity>
       </View>
+
+      {lesson.forkedFrom && (
+        <Card style={styles.forkBanner}>
+          <View style={{ flex: 1, gap: 2 }}>
+            <Text.BodySm style={{ fontFamily: theme.font.family.sansSemibold }}>
+              Zapisano od {lesson.forkedFrom.authorName}
+            </Text.BodySm>
+            {!lesson.forkedFrom.originalStillShared && (
+              <Text.Caption>Oryginał nie jest już dostępny.</Text.Caption>
+            )}
+          </View>
+          {lesson.forkedFrom.hasNewerVersion && (
+            <Button title="Synchronizuj" variant="ghost" size="sm" onPress={syncFork} />
+          )}
+        </Card>
+      )}
+
+      {lesson.canShare && (
+        <Card style={styles.shareCard}>
+          <View style={styles.shareRow}>
+            <View style={{ flex: 1, gap: 2 }}>
+              <Text.Body style={{ fontFamily: theme.font.family.sansSemibold }}>
+                Udostępnij w Społeczności
+              </Text.Body>
+              <Text.Caption>
+                Studenci Twojego przedmiotu zobaczą tytuł, notatkę i talie tej lekcji.
+              </Text.Caption>
+            </View>
+            <Switch value={lesson.isShared} onValueChange={toggleShare} />
+          </View>
+          {lesson.isShared && (
+            <View style={styles.shareStatusRow}>
+              <Text.BodySm style={{ fontFamily: theme.font.family.sansSemibold }}>
+                ♥ {lesson.likeCount}
+              </Text.BodySm>
+              <Text.BodySm style={{ color: theme.colors.text.secondary }}>
+                Widoczna dla studentów tego przedmiotu
+              </Text.BodySm>
+            </View>
+          )}
+        </Card>
+      )}
 
       <View>
         <Text.Title style={styles.sectionTitle}>Notatki</Text.Title>
@@ -354,6 +436,10 @@ const styles = StyleSheet.create({
   },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing[2] },
   titleAction: { padding: theme.spacing[1] },
+  forkBanner: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing[3] },
+  shareCard: { gap: theme.spacing[2] },
+  shareRow: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing[3] },
+  shareStatusRow: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing[2] },
   sectionTitle: { marginBottom: theme.spacing[2] },
   sectionHeader: {
     flexDirection: 'row',
