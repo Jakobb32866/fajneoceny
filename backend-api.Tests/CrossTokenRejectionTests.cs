@@ -1,19 +1,25 @@
+using System.IdentityModel.Tokens.Jwt;
 using System.Net;
 using System.Net.Http.Headers;
+using System.Security.Claims;
+using System.Text;
 using BackendApi.Auth;
+using BackendApi.Data;
 using BackendApi.Domain;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.IdentityModel.Tokens;
 
 namespace BackendApi.Tests;
 
 /// <summary>
 /// The separation, end to end, with real signed tokens: an admin token is
-/// useless on every student route and a student token is useless on every
-/// admin route.
+/// useless on every student route, a student token is useless on every admin
+/// route, and — the part that actually matters — a token FORGED with one
+/// kind's signing key cannot pass as the other kind, whatever claims it
+/// carries.
 ///
-/// The policy tests above assert the routing table is configured correctly;
-/// these assert the configuration actually behaves as intended once a token
-/// is presented.
+/// Cross-kind tokens answer 401, not 403: each route consults only its own
+/// scheme, so a token signed with the other key does not authenticate at all.
 /// </summary>
 public class CrossTokenRejectionTests(AdminTestFactory factory) : IClassFixture<AdminTestFactory>
 {
@@ -24,11 +30,53 @@ public class CrossTokenRejectionTests(AdminTestFactory factory) : IClassFixture<
         return jwt.IssueToken(new User { Id = Guid.NewGuid(), Email = "s@example.com" });
     }
 
-    private string AdminToken(AdminRole role = AdminRole.Admin)
+    private string AdminToken(AdminRole role = AdminRole.Admin) => AdminToken(new Admin
+    {
+        Id = Guid.NewGuid(), Email = "a@example.com", Role = role,
+    });
+
+    private string AdminToken(Admin admin)
     {
         using var scope = factory.Services.CreateScope();
         var tokens = scope.ServiceProvider.GetRequiredService<AdminTokenService>();
-        return tokens.IssueToken(new Admin { Id = Guid.NewGuid(), Email = "a@example.com", Role = role });
+        return tokens.IssueToken(admin);
+    }
+
+    /// <summary>A real super-admin row, so a forged token for it would get through if forgery worked.</summary>
+    private async Task<Admin> SeedSuperAdminAsync()
+    {
+        var admin = new Admin
+        {
+            Email = $"super-{Guid.NewGuid():N}@example.com",
+            DisplayName = "Super",
+            Role = AdminRole.SuperAdmin,
+        };
+
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        db.Admins.Add(admin);
+        await db.SaveChangesAsync();
+        return admin;
+    }
+
+    /// <summary>Hand-signs a token with arbitrary key, audience and claims — what an attacker holding a key would do.</summary>
+    private static string Forge(string signingKey, string audience, Guid subject, string actor, string? role = null)
+    {
+        var claims = new List<Claim>
+        {
+            new(JwtRegisteredClaimNames.Sub, subject.ToString()),
+            new(ClaimTypes.NameIdentifier, subject.ToString()),
+            new(AuthClaims.Actor, actor),
+        };
+        if (role is not null) claims.Add(new Claim(AuthClaims.Role, role));
+
+        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(signingKey));
+        return new JwtSecurityTokenHandler().WriteToken(new JwtSecurityToken(
+            issuer: "fajneoceny",
+            audience: audience,
+            claims: claims,
+            expires: DateTime.UtcNow.AddHours(1),
+            signingCredentials: new SigningCredentials(key, SecurityAlgorithms.HmacSha256)));
     }
 
     private HttpClient ClientWith(string token)
@@ -47,8 +95,7 @@ public class CrossTokenRejectionTests(AdminTestFactory factory) : IClassFixture<
     {
         var response = await ClientWith(AdminToken()).GetAsync(route);
 
-        // 403, not 200: the token authenticates but fails the student policy.
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Theory]
@@ -61,7 +108,7 @@ public class CrossTokenRejectionTests(AdminTestFactory factory) : IClassFixture<
     {
         var response = await ClientWith(StudentToken()).GetAsync(route);
 
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Theory]
@@ -70,6 +117,7 @@ public class CrossTokenRejectionTests(AdminTestFactory factory) : IClassFixture<
     [InlineData("/api/admin/stats")]
     public async Task ANormalAdminToken_IsRejectedBySuperAdminRoutes(string route)
     {
+        // A valid admin token that authenticates but fails the role claim.
         var response = await ClientWith(AdminToken(AdminRole.Admin)).GetAsync(route);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
@@ -87,18 +135,47 @@ public class CrossTokenRejectionTests(AdminTestFactory factory) : IClassFixture<
     }
 
     [Fact]
-    public async Task AnAdminTokenSignedWithTheStudentKey_IsRejected()
+    public async Task AGenuineSuperAdminToken_IsAccepted()
     {
-        // Separate signing keys: a forged token minted with the student
-        // secret must not be accepted as an admin token.
-        using var scope = factory.Services.CreateScope();
-        var jwt = scope.ServiceProvider.GetRequiredService<JwtTokenService>();
+        // Positive control for the forgery tests below: the very same admin
+        // row IS reachable with a properly issued token, so their 401s come
+        // from the signature check and not from something incidental.
+        var admin = await SeedSuperAdminAsync();
 
-        // A genuine student token, presented to an admin route.
-        var response = await ClientWith(jwt.IssueToken(new User { Id = Guid.NewGuid(), Email = "s@example.com" }))
-            .GetAsync("/api/admin/stats");
+        var response = await ClientWith(AdminToken(admin)).GetAsync("/api/admin/admins");
 
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData(JwtOptions.AdminAudience)]
+    [InlineData("fajneoceny-app")]
+    public async Task ASuperAdminTokenForgedWithTheStudentKey_IsRejected(string audience)
+    {
+        // Whoever signs a token chooses its fo_actor/fo_role claims, so the
+        // student key must not be trusted for admin tokens at all — for
+        // either audience, and for a real super admin's id.
+        var admin = await SeedSuperAdminAsync();
+        var forged = Forge(AdminTestFactory.StudentKey, audience, admin.Id,
+            AuthClaims.ActorAdmin, nameof(AdminRole.SuperAdmin));
+
+        var response = await ClientWith(forged).GetAsync("/api/admin/admins");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("fajneoceny-app")]
+    [InlineData(JwtOptions.AdminAudience)]
+    public async Task AStudentTokenForgedWithTheAdminKey_IsRejected(string audience)
+    {
+        // The mirror image: the admin key must not mint student tokens, or
+        // an admin could impersonate any student and read their private data.
+        var forged = Forge(AdminTestFactory.AdminKey, audience, Guid.NewGuid(), AuthClaims.ActorStudent);
+
+        var response = await ClientWith(forged).GetAsync("/api/subjects");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]

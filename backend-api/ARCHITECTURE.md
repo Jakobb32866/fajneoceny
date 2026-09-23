@@ -153,6 +153,15 @@ its own signing key, and routes the other's token is refused on.
 - `JwtTokenService` issues student tokens (30 days); `AdminTokenService`
   issues admin tokens (8 hours, audience `fajneoceny-admin`, its own
   `Jwt:AdminKey`). `GoogleTokenVerifier` validates Google ID tokens.
+- Each token kind has its **own bearer scheme** (`AuthSchemes.Student` /
+  `AuthSchemes.Admin`) trusting only its own key and audience, and every
+  policy is pinned to one scheme. Never put both keys in one scheme: the
+  signer chooses the `fo_actor`/`fo_role` claims, so a scheme that trusts the
+  student key for admin routes lets that key mint super-admin tokens.
+- `JwtOptions.EnsureValid` runs at startup and refuses missing, short or
+  shared keys, and (outside Development) the public `dev-only-*` keys from
+  `appsettings.Development.json`. Production keys come from `JWT_KEY` /
+  `JWT_ADMIN_KEY` in `.env`.
 - `AuthClaims` defines the `fo_actor` / `fo_role` claims the policies key off.
   They are deliberately not named `typ`/`role`: `typ` is a reserved JOSE
   header parameter and `role` maps to `ClaimTypes.Role` under inbound claim
@@ -212,7 +221,7 @@ its own signing key, and routes the other's token is refused on.
 
 ```
 HTTP request
-  → JWT bearer auth middleware (validates token)
+  → authorization policy authenticates with ITS scheme only (student or admin key)
   → endpoint handler (RequireAuthorization)
      → AppDbContext (queries auto-scoped to CurrentUser via query filters)
      → capability service(s) behind interfaces

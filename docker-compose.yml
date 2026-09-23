@@ -30,17 +30,18 @@ services:
       Tts__Provider: Google
       Tts__Google__ApiKey: "${GOOGLE_TTS_API_KEY:-}"
       Tts__Google__VoiceName: "${GOOGLE_TTS_VOICE:-pl-PL-Standard-F}"
-      # App JWT signing. Jwt__Key is a dev-only placeholder — production MUST
-      # override it with a long random secret kept out of source control.
-      Jwt__Key: dev-only-placeholder-signing-key-change-me-32chars-min
+      # App JWT signing. Two DIFFERENT random secrets, set in the gitignored
+      # .env next to this file (see .env.example) — never committed here.
+      # Student and admin tokens are each validated only with their own key,
+      # so leaking the student key cannot mint an admin token. The API refuses
+      # to start if either is missing, shorter than 32 bytes, equal to the
+      # other, or one of the public dev-only-* keys.
+      Jwt__Key: "${JWT_KEY:?set JWT_KEY in .env (openssl rand -base64 48)}"
       Jwt__Issuer: fajneoceny
       Jwt__Audience: fajneoceny-app
       Jwt__ExpiryMinutes: "43200"
-      # Admin tokens are signed with their own key and expire in hours, not
-      # days. Leave AdminKey empty and it falls back to Jwt__Key, which works
-      # but means one leaked secret mints both kinds of token — production
-      # should set a distinct value.
-      Jwt__AdminKey: ""
+      # Admin tokens expire in hours, not days.
+      Jwt__AdminKey: "${JWT_ADMIN_KEY:?set JWT_ADMIN_KEY in .env (openssl rand -base64 48)}"
       Jwt__AdminExpiryMinutes: "480"
       # The single super-admin account, created/updated on every startup.
       # Set both in the gitignored .env next to this file (same place as

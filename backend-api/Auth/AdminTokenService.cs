@@ -38,7 +38,7 @@ public class AdminTokenService(IOptions<JwtOptions> options)
             new Claim(AuthClaims.Role, admin.Role.ToString()),
         };
 
-        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_options.EffectiveAdminKey));
+        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_options.AdminKey));
         var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
         var token = new JwtSecurityToken(

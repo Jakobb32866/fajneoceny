@@ -86,9 +86,12 @@ deliberately left:
       boots normally. Generate the hash with
       `cd backend-api && dotnet run -- hash-password '<password>'` and put only
       the hash in the environment; plaintext never belongs in config.
-- [ ] **Set `Jwt__AdminKey` in production.** Admin tokens fall back to
-      `Jwt__Key` when it is empty, which works but means one leaked secret can
-      mint both student and admin tokens.
+- [ ] **Set `JWT_KEY` and `JWT_ADMIN_KEY` in the production `.env`** (two
+      different `openssl rand -base64 48` values). The API now refuses to start
+      without them, so this cannot be forgotten silently — but a deployment
+      that predates the change will fail to boot until they are set. The old
+      committed key (`dev-only-placeholder-…`) is still in git history and
+      must never be reused; the startup check rejects it.
 - [ ] **Email notifications.** Nothing tells a student why their course
       proposal was rejected, that a lesson was taken down, or that they have
       been banned from sharing — the rejected proposal's badge simply stops

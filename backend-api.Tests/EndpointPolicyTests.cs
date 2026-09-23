@@ -128,14 +128,17 @@ public class EndpointPolicyTests(AdminTestFactory factory) : IClassFixture<Admin
 /// </summary>
 public class AdminTestFactory : WebApplicationFactory<Program>
 {
+    public const string StudentKey = "test-only-signing-key-at-least-32-characters-long";
+    public const string AdminKey = "test-only-admin-signing-key-at-least-32-chars";
+
     private readonly string _dbPath = Path.Combine(Path.GetTempPath(), $"policy-tests-{Guid.NewGuid():N}.db");
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment(Environments.Development);
         builder.UseSetting("ConnectionStrings:DefaultConnection", $"Data Source={_dbPath}");
-        builder.UseSetting("Jwt:Key", "test-only-signing-key-at-least-32-characters-long");
-        builder.UseSetting("Jwt:AdminKey", "test-only-admin-signing-key-at-least-32-chars");
+        builder.UseSetting("Jwt:Key", StudentKey);
+        builder.UseSetting("Jwt:AdminKey", AdminKey);
     }
 
     protected override void Dispose(bool disposing)

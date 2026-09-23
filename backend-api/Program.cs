@@ -104,49 +104,37 @@ builder.Services.AddCors(options =>
     options.AddDefaultPolicy(policy => policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod());
 });
 
-var jwtSection = builder.Configuration.GetSection("Jwt");
-var jwtOptions = jwtSection.Get<JwtOptions>() ?? new JwtOptions();
+var jwtOptions = builder.Configuration.GetSection("Jwt").Get<JwtOptions>() ?? new JwtOptions();
 
-// One bearer scheme validating BOTH student and admin tokens. Two named
-// schemes would mean every endpoint had to pin a scheme for HttpContext.User
-// to be populated at all (CurrentUser/CurrentAdmin both read from it), which
-// is strictly more moving parts. The audience is not the gate here — the
-// authorization policies below are.
+// Fail at startup rather than run with forgeable tokens: missing, short,
+// shared, or publicly committed signing keys are all refused here.
+jwtOptions.EnsureValid(builder.Environment.IsDevelopment());
+
+// One bearer scheme PER TOKEN TYPE, each trusting exactly one key and one
+// audience (see AuthSchemes). Every policy below is pinned to a single
+// scheme, and the authorization middleware then sets HttpContext.User from
+// that scheme alone — which is what CurrentUser/CurrentAdmin read.
 //
-// The signing keys are separate per audience, so the student-token secret
-// alone cannot forge an admin token.
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(options =>
-    {
-        // Never remap inbound claim names. This is already the default on
-        // modern .NET, but these policies are security-critical and must not
-        // depend on a framework default that could change: remapping would
-        // rewrite "fo_role"-style names and silently alter what the policies
-        // below match.
-        options.MapInboundClaims = false;
-
-        options.TokenValidationParameters = new TokenValidationParameters
-        {
-            ValidateIssuer = true,
-            ValidIssuer = jwtOptions.Issuer,
-            ValidateAudience = true,
-            ValidAudiences = [jwtOptions.Audience, JwtOptions.AdminAudience],
-            ValidateIssuerSigningKey = true,
-            IssuerSigningKeys =
-            [
-                new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtOptions.Key)),
-                new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtOptions.EffectiveAdminKey)),
-            ],
-            ValidateLifetime = true,
-        };
-    });
+// Do not merge these back into one scheme with both keys: a single scheme
+// accepts a token signed by either key, and since the signer chooses the
+// fo_actor/fo_role claims, the student key could then mint a super-admin
+// token (CrossTokenRejectionTests covers this).
+//
+// No default scheme is set on purpose: no request is authenticated except
+// through a policy, so nothing can reach an endpoint on the wrong scheme.
+builder.Services.AddAuthentication()
+    .AddJwtBearer(AuthSchemes.Student, options =>
+        ConfigureBearer(options, jwtOptions.Issuer, jwtOptions.Audience, jwtOptions.Key))
+    .AddJwtBearer(AuthSchemes.Admin, options =>
+        ConfigureBearer(options, jwtOptions.Issuer, JwtOptions.AdminAudience, jwtOptions.AdminKey));
 
 builder.Services.AddAuthorization(options =>
 {
     // DefaultPolicy is what a bare RequireAuthorization() resolves to, which
-    // is every existing student route. Those now mean "a student token", not
-    // merely "some valid JWT", so an admin token is rejected by all of them.
-    options.DefaultPolicy = new AuthorizationPolicyBuilder()
+    // is every existing student route. Those mean "a student token", not
+    // merely "some valid JWT": only the student scheme is consulted, so an
+    // admin token is not even authenticated on them.
+    options.DefaultPolicy = new AuthorizationPolicyBuilder(AuthSchemes.Student)
         .RequireAuthenticatedUser()
         .RequireClaim(AuthClaims.Actor, AuthClaims.ActorStudent)
         .Build();
@@ -159,12 +147,14 @@ builder.Services.AddAuthorization(options =>
     options.FallbackPolicy = options.DefaultPolicy;
 
     options.AddPolicy(AuthPolicies.Admin, policy => policy
+        .AddAuthenticationSchemes(AuthSchemes.Admin)
         .RequireAuthenticatedUser()
         .RequireClaim(AuthClaims.Actor, AuthClaims.ActorAdmin));
 
     // The role claim is a first-pass filter only; AdminContext re-reads the
     // authoritative role from the database on every admin request.
     options.AddPolicy(AuthPolicies.SuperAdmin, policy => policy
+        .AddAuthenticationSchemes(AuthSchemes.Admin)
         .RequireAuthenticatedUser()
         .RequireClaim(AuthClaims.Actor, AuthClaims.ActorAdmin)
         .RequireClaim(AuthClaims.Role, nameof(AdminRole.SuperAdmin)));
@@ -209,3 +199,23 @@ app.MapCommunityEndpoints();
 app.MapAdminEndpoints();
 
 app.Run();
+
+static void ConfigureBearer(JwtBearerOptions options, string issuer, string audience, string key)
+{
+    // Never remap inbound claim names. This is already the default on modern
+    // .NET, but these policies are security-critical and must not depend on a
+    // framework default that could change: remapping would rewrite
+    // "fo_role"-style names and silently alter what the policies match.
+    options.MapInboundClaims = false;
+
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuer = true,
+        ValidIssuer = issuer,
+        ValidateAudience = true,
+        ValidAudience = audience,
+        ValidateIssuerSigningKey = true,
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key)),
+        ValidateLifetime = true,
+    };
+}
