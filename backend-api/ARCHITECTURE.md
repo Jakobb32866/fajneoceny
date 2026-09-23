@@ -13,8 +13,8 @@ together and where the extension seams are.
 | Runtime / framework | .NET 10, ASP.NET Core Minimal APIs |
 | Persistence | Entity Framework Core + SQLite (`app.db`) |
 | Auth | JWT bearer tokens; email/password + Google ID-token sign-in |
-| LLM | Any OpenAI-compatible `/chat/completions` endpoint (OpenAI or local Ollama) |
-| TTS | Local Piper engine (subprocess), WAV output |
+| LLM | Any OpenAI-compatible `/chat/completions` endpoint (OpenAI by default) |
+| TTS | Google Cloud Text-to-Speech (default) or local Piper; WAV either way |
 | Config | `appsettings.json` + `appsettings.Development.json`, bound to options classes |
 
 ## Architectural style
@@ -43,7 +43,8 @@ data layer.
 ### Endpoints
 `AuthEndpoints`, `SubjectEndpoints`, `LessonEndpoints`, `DeckEndpoints`,
 `FlashcardEndpoints`, `SettingsEndpoints`, `UniversityEndpoints`,
-`CommunityEndpoints`. Registered in `Program.cs` via `app.Map*Endpoints()`
+`CommunityEndpoints`, and the admin trio `AdminEndpoints` /
+`AdminModerationEndpoints` / `AdminSuperEndpoints`. Registered in `Program.cs` via `app.Map*Endpoints()`
 extension methods. All resource endpoints `RequireAuthorization()`; only the
 auth routes and `GET /api/universities` (used by the registration screen) are
 anonymous.
@@ -77,9 +78,13 @@ anonymous.
   from uploaded files for both flashcards and grading).
 
 **`Services/Tts/`** — audio.
-- `ITextToSpeechService` → `PiperTextToSpeechService`. `SynthesizeAsync` returns
-  a `SynthesizedSpeech(byte[] Data, SpeechAudioFormat Format)`; the contract
-  requires WAV so downstream splicing is provider-agnostic.
+- `ITextToSpeechService` → `GoogleTextToSpeechService` (default) or
+  `PiperTextToSpeechService`, chosen by `Tts:Provider`. `SynthesizeAsync`
+  returns a `SynthesizedSpeech(byte[] Data, SpeechAudioFormat Format)`; the
+  contract requires WAV so downstream splicing is provider-agnostic. Note that
+  `WavAudio` takes the output format from the **first** clip, so clips from
+  different providers must never be mixed inside one export — hence a single
+  global provider setting rather than a per-request choice.
 - `IFlashcardAudioExportService` → `FlashcardAudioExportService` concatenates
   per-card question/answer clips with difficulty-scaled pauses using
   `WavAudio` (a tiny in-repo RIFF/WAVE splicer — no ffmpeg).
@@ -89,11 +94,17 @@ anonymous.
 (uploaded files under a configured root).
 
 **`Services/Community/`** — the cross-user "Społeczność" feature:
-- `CommunityQueries` is the **only** place allowed to call
-  `IgnoreQueryFilters()`. It exposes `VisibleLessonsForCourse` /
-  `VisibleLessonById`, which encode the single visibility invariant (lesson
-  `IsShared` and its subject linked to a university course). Handlers always
-  project the result to DTOs and never hand the `IQueryable` around.
+- `CommunityQueries` is one of only **two** places allowed to call
+  `IgnoreQueryFilters()` (the other is `Services/Admin/AdminQueries`). It
+  exposes `VisibleLessonsForCourse` / `VisibleLessonById`, which encode the
+  single visibility invariant (lesson `IsShared` and its subject linked to a
+  university course). Handlers always project the result to DTOs and never
+  hand the `IQueryable` around.
+- `LessonPaging` holds the ordering/pagination shared by the student feed and
+  the admin moderation feed, including the in-memory sort forced by SQLite's
+  inability to `ORDER BY` a `DateTimeOffset` column.
+- `CourseNaming` refuses a course name already taken in a university (by a
+  course or a pending proposal), so near-duplicates never split a feed.
 - `CommunityAuthorization` answers "is this user recognised" (has a
   `UniversityId`) and "may they access this course" (course belongs to their
   university). Every community route checks it and answers 404 on failure so
@@ -102,15 +113,60 @@ anonymous.
   cards) into the caller's subject and re-syncs it later. It never copies
   `SpacedRepetitionState`/`QuizSession`, and uses tracked adds/removes (not
   `ExecuteDelete`) so the `ContentUpdatedAt` bump fires.
-- `CourseProposalReconciliation` links a subject to its course once the owner
-  has approved the proposal in SQL (`Status='Approved'`, `CourseId` set); it
-  runs at the top of `GET /api/subjects`.
+- `CourseProposalReconciliation` links a subject to its course once an admin
+  has approved the proposal (`Status='Approved'`, `CourseId` set); it runs at
+  the top of `GET /api/subjects`.
+
+**`Services/Admin/`** — moderation and curation, for the separate admin
+account type:
+- `AdminQueries` is the second sanctioned `IgnoreQueryFilters()` site. Two
+  invariants are enforced by its **signatures**, not by discipline: every
+  lesson query hard-codes `IsShared` (an admin can never read a lesson its
+  author did not share), and every method requires a `universityId`, so
+  forgetting to scope is a compile error rather than a cross-school leak.
+- `AdminContext` re-reads the caller's `Admin` row on **every** admin request.
+  Admin tokens last hours with no revocation list, so trusting the token would
+  let a disabled or demoted admin keep their powers until it expired.
+- `AdminAuthorization` / `AdminScopeResolver` answer "which university does
+  this request act on?" — a normal admin's own (the requested id is ignored),
+  or, for a super admin, the one named by `?universityId=`. This is what makes
+  "a super admin can do anything a normal admin can, anywhere" one code path.
+- `AdminAudit` writes `AdminAuditEntry` rows. Moderation destroys its own
+  evidence — a taken-down lesson is unshared and therefore unreadable by every
+  admin — so each entry carries a text **snapshot** taken at action time.
+- `ShareBanQueries` is the single definition of "is this user banned from
+  sharing right now?", since `ShareBan` is history (many rows, never
+  overwritten) rather than a flag.
+- `StatsClock` computes stat windows on **Europe/Warsaw** day boundaries.
 
 ### Auth
+There are **two account types**, and they are mutually exclusive: a `User`
+(student) and an `Admin`. Each has its own credentials, its own JWT audience,
+its own signing key, and routes the other's token is refused on.
+
 - `ICurrentUser` → `CurrentUser` resolves the caller's id from the JWT via
-  `IHttpContextAccessor`. **`AppDbContext` depends on it** to scope data.
-- `JwtTokenService` issues tokens; `GoogleTokenVerifier` validates Google
-  ID tokens. Both read their own options section.
+  `IHttpContextAccessor`. **`AppDbContext` depends on it** to scope data. It
+  returns `Guid.Empty` for anything that is not a student token, so every
+  per-user query filter matches nothing on an admin request — admin code fails
+  closed on owned data and must go through `AdminQueries` instead.
+- `ICurrentAdmin` → `CurrentAdmin` is its mirror for admin requests.
+- `JwtTokenService` issues student tokens (30 days); `AdminTokenService`
+  issues admin tokens (8 hours, audience `fajneoceny-admin`, its own
+  `Jwt:AdminKey`). `GoogleTokenVerifier` validates Google ID tokens.
+- `AuthClaims` defines the `fo_actor` / `fo_role` claims the policies key off.
+  They are deliberately not named `typ`/`role`: `typ` is a reserved JOSE
+  header parameter and `role` maps to `ClaimTypes.Role` under inbound claim
+  mapping. **Never use `[Authorize(Roles = …)]` or `IsInRole()`** in this
+  codebase — they match `ClaimTypes.Role`, not these claims, and fail in ways
+  that are miserable to debug. Role checks go through the named policies.
+- **Policies** (`Program.cs`): `DefaultPolicy` requires a *student* token, so
+  the ~27 bare `RequireAuthorization()` calls became student-only with no
+  edits. `FallbackPolicy` is the same policy, so an endpoint that forgets
+  authorization entirely is student-only rather than public; the four
+  genuinely public routes opt out with an explicit `.AllowAnonymous()`.
+  `AuthPolicies.Admin` / `.SuperAdmin` gate `/api/admin/*`.
+  `EndpointPolicyTests` walks the routing table and fails the build if a new
+  admin route forgets its policy, or if a public route stops being anonymous.
 
 ### Data + Domain
 - `AppDbContext` owns all `DbSet`s and the model config. Two cross-cutting
@@ -119,7 +175,21 @@ anonymous.
     `e.UserId == currentUser.UserId`. (Note: `FindAsync` bypasses filters, so
     endpoints use `FirstOrDefaultAsync(e => e.Id == id)`.)
   - **Ownership stamping**: `SaveChanges[Async]` stamps `UserId` on new
-    `IOwnedByUser` entities automatically.
+    `IOwnedByUser` entities automatically. It **throws** rather than stamping
+    `Guid.Empty`: that would silently write a row no query filter can ever
+    return again, and only happens if an endpoint's authorization is
+    misconfigured.
+  - **Epoch-millis date columns**: SQLite stores `DateTimeOffset` as TEXT, and
+    EF refuses to translate both `ORDER BY` (it throws `NotSupportedException`)
+    and `WHERE` comparisons over such a column — which is why most date sorting
+    in this codebase happens in memory. The columns the admin stats and
+    moderation history must filter on (`Lesson.CreatedAt`, `User.LastLoginAt`,
+    and the dates on `Admin` / `AdminAuditEntry` / `ShareEvent` / `ShareBan`)
+    therefore carry a value converter to Unix epoch milliseconds, making them
+    INTEGER columns EF can translate. The domain types stay `DateTimeOffset`;
+    only the storage changes. The remaining date columns are deliberately left
+    as TEXT — converting them would mean migrating live data for no present
+    gain (see `AppDbContext.DateProperties`).
   - **`Lesson.ContentUpdatedAt` bump**: `SaveChanges[Async]` collects the
     lesson ids of any added/modified/deleted `Note`/`Deck`/`Flashcard` before
     the base save and then `ExecuteUpdate`s those lessons' `ContentUpdatedAt`.
@@ -154,18 +224,26 @@ HTTP request
 
 Two capabilities are designed to swap backends without touching callers:
 
-- **LLM (Ollama ↔ OpenAI ↔ others).** Endpoints and generation/grading services
+- **LLM (OpenAI ↔ Ollama ↔ others).** Endpoints and generation/grading services
   depend on `IChatCompletionClient`, never on `HttpClient` or a specific
   provider. The concrete client is **hardwired in `Program.cs`** to
-  `OpenAiChatCompletionClient`. Today, switching between OpenAI and Ollama is
-  pure config (`Ai:BaseUrl`/`Model`); adding a non-OpenAI provider (e.g.
-  Anthropic) means adding one `IChatCompletionClient` implementation and
-  changing the single registration line.
-- **TTS (local Piper → cloud, e.g. ElevenLabs).** Consumers depend on
-  `ITextToSpeechService`, whose contract requires WAV output. Piper is
-  hardwired in `Program.cs`. A new backend implements the interface (returning
-  WAV — a cloud provider requesting PCM and wrapping it), gets its own nested
-  `TtsOptions` section, and replaces the one registration line.
+  `OpenAiChatCompletionClient`, which speaks any OpenAI-compatible
+  `/chat/completions` endpoint. The deployed stack points at OpenAI itself;
+  switching to a local Ollama (or Azure, OpenRouter, …) is pure config
+  (`Ai:BaseUrl`/`Model`). Adding a non-OpenAI-shaped provider (e.g. Anthropic)
+  means adding one `IChatCompletionClient` implementation and changing the
+  single registration line.
+- **TTS (Google Cloud ↔ local Piper).** Consumers depend on
+  `ITextToSpeechService`, whose contract requires WAV output. Unlike the LLM
+  seam this one is **selected by configuration** (`Tts:Provider`), not by a
+  hardwired line, because the two backends have different deployment stories:
+  `GoogleTextToSpeechService` needs an API key and nothing installed, while
+  `PiperTextToSpeechService` needs a binary and a ~60 MB voice model present
+  on disk. Google is the default and the only one the Docker image can run —
+  the image deliberately ships no speech engine. Google is asked for LINEAR16,
+  which comes back with a RIFF header, so no transcoding is needed.
+  A third backend adds a class, a nested `TtsOptions` section and an enum
+  value.
 
 Both fall back gracefully: if no LLM is configured (`IsConfigured == false`) or
 a call fails, the AI services defer to their offline heuristic implementation so

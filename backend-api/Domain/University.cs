@@ -12,5 +12,13 @@ public class University
     public string? ShortName { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 
+    /// <summary>
+    /// Hidden from registration and course pickers without being destroyed.
+    /// Deleting is only possible when nothing references the row (Subject and
+    /// User links are DeleteBehavior.Restrict, so a real delete would throw);
+    /// archiving is the answer for everything else.
+    /// </summary>
+    public bool IsArchived { get; set; }
+
     public List<UniversityCourse> Courses { get; set; } = [];
 }

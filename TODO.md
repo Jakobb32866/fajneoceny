@@ -32,6 +32,40 @@ jeszcze skonfigurowane.").
       client IDs, fill in `GOOGLE_OAUTH_CLIENT_IDS.ios` / `.android`, and add
       both IDs to the backend's `Google.ClientIds` allow-list.
 
+## LLM and text-to-speech API keys
+
+Both are cloud services now; the local Ollama server and the bundled Piper
+voice were removed from the Docker image. Copy `.env.example` to `.env` and
+fill these in:
+
+- [ ] **`OPENAI_API_KEY`** — https://platform.openai.com/api-keys. Without it
+      flashcard generation silently falls back to the offline heuristic
+      generator, so the app keeps working but produces simpler cards. Set a
+      spend limit on the key; `gpt-4o-mini` is cheap but not free.
+- [ ] **`GOOGLE_TTS_API_KEY`** — a Google Cloud API key with the
+      Text-to-Speech API enabled
+      (https://console.cloud.google.com/apis/credentials). Without it audio
+      export fails with a clear message; nothing else is affected.
+      **Restrict the key to the Text-to-Speech API** before using it anywhere
+      real — an unrestricted key is usable for any enabled API on the project.
+- [ ] Consider `GOOGLE_TTS_VOICE`. **Verify any name against the live list
+      first** — Google silently falls back to a default voice when the name
+      does not exist, so a typo produces working audio in the wrong voice and
+      nothing reports an error:
+
+          curl "https://texttospeech.googleapis.com/v1/voices?languageCode=pl-PL" \
+               -H "X-Goog-Api-Key: $GOOGLE_TTS_API_KEY"
+
+      For pl-PL the real names are `Standard-F/G`, `Wavenet-F/G` and ~30
+      `Chirp3-HD-*`. Measured on this account: `Standard-F` and `Wavenet-F`
+      return byte-identical audio (same for G), so the Standard tier is the
+      cheaper way to get that voice; the `Chirp3-HD-*` voices genuinely sound
+      different and are the ones worth auditioning.
+      https://cloud.google.com/text-to-speech/pricing
+
+Neither key is needed for local development unless you want to exercise those
+features — the app boots and runs without them.
+
 ## Expo Go on a physical device
 
 Working, but needs one machine-specific setting:
@@ -41,6 +75,38 @@ Working, but needs one machine-specific setting:
       gitignored, so each dev has to create their own — and it must be updated
       whenever DHCP hands out a new address or you switch networks. If Expo Go
       can't connect, re-check this first (`ipconfig getifaddr en0`).
+
+## Admin & super admin
+
+The admin panel is implemented (see [docs/admin.md](docs/admin.md)). What is
+deliberately left:
+
+- [ ] **Set `SuperAdmin__Email` and `SuperAdmin__PasswordHash` in production.**
+      Without them no admin account exists at all — the app logs a warning and
+      boots normally. Generate the hash with
+      `cd backend-api && dotnet run -- hash-password '<password>'` and put only
+      the hash in the environment; plaintext never belongs in config.
+- [ ] **Set `Jwt__AdminKey` in production.** Admin tokens fall back to
+      `Jwt__Key` when it is empty, which works but means one leaked secret can
+      mint both student and admin tokens.
+- [ ] **Email notifications.** Nothing tells a student why their course
+      proposal was rejected, that a lesson was taken down, or that they have
+      been banned from sharing — the rejected proposal's badge simply stops
+      showing. This was the decided channel; it needs an actual mail sender
+      (the reason is already stored on `CourseProposal.ReviewReason`, the
+      moderation lock and the `ShareBan` row, so only delivery is missing).
+- [ ] **Merging duplicate courses.** Students can no longer *propose* a name
+      that already exists in their university, and approving offers the
+      existing courses first — but any duplicates that already exist still
+      need merging by hand (repoint `Subjects.UniversityCourseId`, then
+      archive the loser). Worth a real admin action if it ever happens twice.
+- [ ] **Rate limiting on `/api/admin/auth/login`.** There is none, and the
+      endpoint is public by necessity.
+- [ ] **The remaining `DateTimeOffset` columns are still TEXT**, so SQLite
+      cannot sort or filter them and the community feed still orders in
+      memory (`LessonPaging`). The converter pattern in `AppDbContext` makes
+      converting them mechanical if that list ever grows large enough to
+      matter.
 
 ## Spaced repetition follow-ups (from the Anki-scheduler plan, not blocking)
 

@@ -1,12 +1,13 @@
 import { API_BASE_URL } from './config';
 import { ApiError } from './errors';
-import { clearToken, getTokenSync } from './token';
+import { clearToken, getTokenSync, type TokenKind } from './token';
 import type {
   AuthResponse,
   AuthUser,
   CommunityLessonDetail,
   CommunityLessonPage,
   CommunitySort,
+  CourseProposalStatus,
   DailyCardDto,
   DailyResponse,
   DailySummary,
@@ -28,18 +29,46 @@ import type {
   SyllabusUploadResult,
   UniversityCourseDto,
   UniversityDto,
+  AdminAccount,
+  AdminCourse,
+  AdminLessonDetail,
+  AdminLessonPage,
+  AdminLoginResponse,
+  AdminModeratedLesson,
+  AdminProposal,
+  AdminStats,
+  AdminUniversity,
+  AdminUserDetail,
+  AdminUserPage,
+  ShareBan,
 } from './types';
 
 // Registered by AuthContext so a 401 from any request (e.g. an expired token
 // mid-session) can immediately drop the app back to the signed-out state.
 let onUnauthorized: (() => void) | null = null;
+let onAdminUnauthorized: (() => void) | null = null;
 
 export function setUnauthorizedHandler(handler: (() => void) | null) {
   onUnauthorized = handler;
 }
 
+export function setAdminUnauthorizedHandler(handler: (() => void) | null) {
+  onAdminUnauthorized = handler;
+}
+
+/**
+ * Admin and student routes use differently-signed tokens that the backend
+ * refuses to accept for each other, so the token is chosen by path. Both can
+ * be present at once — signing in as an admin does not end a student session
+ * on the same device.
+ */
+function tokenKindFor(path: string): TokenKind {
+  return path.startsWith('/api/admin') ? 'admin' : 'student';
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const token = getTokenSync();
+  const kind = tokenKindFor(path);
+  const token = getTokenSync(kind);
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
     headers: {
@@ -50,9 +79,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   if (!response.ok) {
+    // 403 on an admin route means the token is valid but not an admin one
+    // (or not a super-admin one) — that is an authorization failure to show,
+    // not a reason to drop the session. Only 401 signs out.
     if (response.status === 401) {
-      await clearToken();
-      onUnauthorized?.();
+      await clearToken(kind);
+      if (kind === 'admin') onAdminUnauthorized?.();
+      else onUnauthorized?.();
     }
     const text = await response.text().catch(() => '');
     throw new ApiError({
@@ -65,6 +98,18 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
+}
+
+
+/** Builds a query string from the defined values only, so optional scope params stay absent. */
+function adminQuery(options?: Record<string, string | number | undefined>): string {
+  if (!options) return '';
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(options)) {
+    if (value !== undefined && value !== null && value !== '') params.set(key, String(value));
+  }
+  const query = params.toString();
+  return query ? `?${query}` : '';
 }
 
 export const api = {
@@ -228,4 +273,136 @@ export const api = {
 
     me: () => request<AuthUser>('/api/auth/me'),
   },
+  // -------------------------------------------------------------------------
+  // Admin
+  //
+  // Every path here starts with /api/admin, which is how the request layer
+  // knows to send the admin token rather than the student one.
+  //
+  // University-scoped calls take an optional universityId: a normal admin's
+  // scope is implied by their account and the parameter is ignored, while a
+  // super admin MUST supply one (the backend 404s otherwise).
+  // -------------------------------------------------------------------------
+  admin: {
+    login: (email: string, password: string) =>
+      request<AdminLoginResponse>('/api/admin/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ email, password }),
+      }),
+
+    me: () => request<AdminAccount>('/api/admin/me'),
+
+    // Course proposals
+    listProposals: (options?: { universityId?: string; status?: CourseProposalStatus }) =>
+      request<AdminProposal[]>(`/api/admin/proposals${adminQuery(options)}`),
+
+    approveProposal: (
+      id: string,
+      body: { courseId?: string; newCourseName?: string; newCourseCode?: string },
+      universityId?: string,
+    ) =>
+      request<void>(`/api/admin/proposals/${id}/approve${adminQuery({ universityId })}`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+
+    rejectProposal: (id: string, reason: string | undefined, universityId?: string) =>
+      request<void>(`/api/admin/proposals/${id}/reject${adminQuery({ universityId })}`, {
+        method: 'POST',
+        body: JSON.stringify({ reason }),
+      }),
+
+    // Course catalogue
+    listCourses: (universityId?: string) =>
+      request<AdminCourse[]>(`/api/admin/courses${adminQuery({ universityId })}`),
+
+    createCourse: (body: { name: string; code?: string }, universityId?: string) =>
+      request<AdminCourse>(`/api/admin/courses${adminQuery({ universityId })}`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+
+    updateCourse: (
+      id: string,
+      body: { name?: string; code?: string; isArchived?: boolean },
+      universityId?: string,
+    ) =>
+      request<void>(`/api/admin/courses/${id}${adminQuery({ universityId })}`, {
+        method: 'PUT',
+        body: JSON.stringify(body),
+      }),
+
+    deleteCourse: (id: string, universityId?: string) =>
+      request<void>(`/api/admin/courses/${id}${adminQuery({ universityId })}`, { method: 'DELETE' }),
+
+    // Shared-lesson moderation
+    listLessons: (options: {
+      universityId?: string;
+      courseId?: string;
+      sort?: CommunitySort;
+      q?: string;
+      page?: number;
+    }) => request<AdminLessonPage>(`/api/admin/lessons${adminQuery(options)}`),
+
+    getLesson: (id: string, universityId?: string) =>
+      request<AdminLessonDetail>(`/api/admin/lessons/${id}${adminQuery({ universityId })}`),
+
+    listModeratedLessons: (universityId?: string) =>
+      request<AdminModeratedLesson[]>(`/api/admin/lessons/moderated${adminQuery({ universityId })}`),
+
+    takedownLesson: (id: string, body: { reason: string; banHours?: number }, universityId?: string) =>
+      request<void>(`/api/admin/lessons/${id}/takedown${adminQuery({ universityId })}`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+
+    liftLessonLock: (id: string, universityId?: string) =>
+      request<void>(`/api/admin/lessons/${id}/takedown${adminQuery({ universityId })}`, { method: 'DELETE' }),
+
+    // Users & share bans
+    listUsers: (options: { universityId?: string; q?: string; page?: number }) =>
+      request<AdminUserPage>(`/api/admin/users${adminQuery(options)}`),
+
+    getUser: (id: string, universityId?: string) =>
+      request<AdminUserDetail>(`/api/admin/users/${id}${adminQuery({ universityId })}`),
+
+    listShareBans: (userId: string, universityId?: string) =>
+      request<ShareBan[]>(`/api/admin/users/${userId}/share-bans${adminQuery({ universityId })}`),
+
+    issueShareBan: (userId: string, body: { hours: number; reason: string }, universityId?: string) =>
+      request<void>(`/api/admin/users/${userId}/share-ban${adminQuery({ universityId })}`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+
+    liftShareBan: (userId: string, universityId?: string) =>
+      request<void>(`/api/admin/users/${userId}/share-ban${adminQuery({ universityId })}`, { method: 'DELETE' }),
+
+    // Super admin only
+    listUniversities: () => request<AdminUniversity[]>('/api/admin/universities'),
+
+    createUniversity: (body: { name: string; shortName?: string }) =>
+      request<AdminUniversity>('/api/admin/universities', { method: 'POST', body: JSON.stringify(body) }),
+
+    updateUniversity: (id: string, body: { name?: string; shortName?: string; isArchived?: boolean }) =>
+      request<void>(`/api/admin/universities/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+
+    deleteUniversity: (id: string) =>
+      request<void>(`/api/admin/universities/${id}`, { method: 'DELETE' }),
+
+    listAdmins: () => request<AdminAccount[]>('/api/admin/admins'),
+
+    createAdmin: (body: { email: string; displayName: string; password: string; universityId?: string }) =>
+      request<AdminAccount>('/api/admin/admins', { method: 'POST', body: JSON.stringify(body) }),
+
+    updateAdmin: (
+      id: string,
+      body: { displayName?: string; password?: string; universityId?: string; isDisabled?: boolean },
+    ) => request<void>(`/api/admin/admins/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+
+    disableAdmin: (id: string) => request<void>(`/api/admin/admins/${id}`, { method: 'DELETE' }),
+
+    stats: () => request<AdminStats>('/api/admin/stats'),
+  },
+
 };

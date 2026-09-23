@@ -28,6 +28,12 @@ public static class AuthEndpoints
     {
         var group = app.MapGroup("/api/auth").WithTags("Auth");
 
+        // NOTE: the three public routes below opt out individually, NOT via
+        // group.AllowAnonymous(). AllowAnonymous is metadata that the
+        // authorization middleware honours wherever it appears on an
+        // endpoint, so putting it on the group would also make /me public
+        // despite its RequireAuthorization().
+
         group.MapPost("/register", async (
             RegisterRequest request,
             AppDbContext db,
@@ -80,12 +86,14 @@ public static class AuthEndpoints
 
             user.PasswordHash = hasher.HashPassword(user, request.Password);
 
+            user.LastLoginAt = DateTimeOffset.UtcNow;
+
             db.Users.Add(user);
             await db.SaveChangesAsync();
 
             var token = jwt.IssueToken(user);
             return Results.Created($"/api/auth/me", new AuthResponse(token, user.ToDto()));
-        });
+        }).AllowAnonymous();
 
         group.MapPost("/login", async (
             LoginRequest request,
@@ -106,9 +114,12 @@ public static class AuthEndpoints
                 return Results.Unauthorized();
             }
 
+            user.LastLoginAt = DateTimeOffset.UtcNow;
+            await db.SaveChangesAsync();
+
             var token = jwt.IssueToken(user);
             return Results.Ok(new AuthResponse(token, user.ToDto()));
-        });
+        }).AllowAnonymous();
 
         group.MapPost("/google", async (
             GoogleAuthRequest request,
@@ -188,11 +199,12 @@ public static class AuthEndpoints
                 // re-call once it has collected the school/university info.
             }
 
+            user!.LastLoginAt = DateTimeOffset.UtcNow;
             await db.SaveChangesAsync();
 
             var token = jwt.IssueToken(user!);
             return Results.Ok(new AuthResponse(token, user!.ToDto()));
-        });
+        }).AllowAnonymous();
 
         group.MapGet("/me", async (ICurrentUser currentUser, AppDbContext db) =>
         {

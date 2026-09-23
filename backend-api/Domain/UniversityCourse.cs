@@ -14,4 +14,12 @@ public class UniversityCourse
     public string? Code { get; set; }
     public string Name { get; set; } = string.Empty;
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+
+    /// <summary>
+    /// Hidden from registration and course pickers without being destroyed.
+    /// Deleting is only possible when nothing references the row (Subject and
+    /// User links are DeleteBehavior.Restrict, so a real delete would throw);
+    /// archiving is the answer for everything else.
+    /// </summary>
+    public bool IsArchived { get; set; }
 }

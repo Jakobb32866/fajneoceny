@@ -31,7 +31,7 @@ export const API_BASE_URL = resolveApiBaseUrl();
 // real values are per-deployment (Google Cloud Console) and should be filled
 // in before shipping. An empty string disables the Google sign-in button.
 export const GOOGLE_OAUTH_CLIENT_IDS = {
-  web: '',
+  web: '495592595870-klmp9mk043di5tg9kmpbhpalcn4q6g35.apps.googleusercontent.com',
   ios: '',
   android: '',
 };

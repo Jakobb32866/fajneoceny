@@ -17,6 +17,95 @@ namespace BackendApi.Migrations
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.9");
 
+            modelBuilder.Entity("BackendApi.Domain.Admin", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTimeOffset?>("DisabledAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PasswordHash")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("UniversityId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Email")
+                        .IsUnique();
+
+                    b.HasIndex("UniversityId");
+
+                    b.ToTable("Admins");
+                });
+
+            modelBuilder.Entity("BackendApi.Domain.AdminAuditEntry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("AdminId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Summary")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("TargetId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TargetType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("UniversityId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UniversityId");
+
+                    b.HasIndex("TargetType", "TargetId");
+
+                    b.ToTable("AdminAuditEntries");
+                });
+
             modelBuilder.Entity("BackendApi.Domain.CourseProposal", b =>
                 {
                     b.Property<Guid>("Id")
@@ -37,7 +126,13 @@ namespace BackendApi.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("ReviewReason")
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTimeOffset?>("ReviewedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("ReviewedByAdminId")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Status")
@@ -225,8 +320,8 @@ namespace BackendApi.Migrations
                     b.Property<DateTimeOffset>("ContentUpdatedAt")
                         .HasColumnType("TEXT");
 
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("TEXT");
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("INTEGER");
 
                     b.Property<DateTimeOffset?>("ForkSyncedAt")
                         .HasColumnType("TEXT");
@@ -242,6 +337,12 @@ namespace BackendApi.Migrations
 
                     b.Property<int>("LikeCount")
                         .HasColumnType("INTEGER");
+
+                    b.Property<string>("ModerationLockReason")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset?>("ModerationLockedAt")
+                        .HasColumnType("TEXT");
 
                     b.Property<int>("Order")
                         .HasColumnType("INTEGER");
@@ -348,6 +449,75 @@ namespace BackendApi.Migrations
                     b.ToTable("QuizSessions");
                 });
 
+            modelBuilder.Entity("BackendApi.Domain.ShareBan", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("ExpiresAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Hours")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("IssuedByAdminId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("LiftedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid?>("LiftedByAdminId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("StartsAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "ExpiresAt");
+
+                    b.ToTable("ShareBans");
+                });
+
+            modelBuilder.Entity("BackendApi.Domain.ShareEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("LessonId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("UniversityId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LessonId");
+
+                    b.ToTable("ShareEvents");
+                });
+
             modelBuilder.Entity("BackendApi.Domain.SpacedRepetitionState", b =>
                 {
                     b.Property<Guid>("Id")
@@ -447,6 +617,9 @@ namespace BackendApi.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<bool>("IsArchived")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -476,6 +649,9 @@ namespace BackendApi.Migrations
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsArchived")
+                        .HasColumnType("INTEGER");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -512,6 +688,9 @@ namespace BackendApi.Migrations
 
                     b.Property<string>("GoogleSubjectId")
                         .HasColumnType("TEXT");
+
+                    b.Property<long?>("LastLoginAt")
+                        .HasColumnType("INTEGER");
 
                     b.Property<string>("LastName")
                         .IsRequired()
@@ -597,6 +776,16 @@ namespace BackendApi.Migrations
                         .IsUnique();
 
                     b.ToTable("UserSrsSettings");
+                });
+
+            modelBuilder.Entity("BackendApi.Domain.Admin", b =>
+                {
+                    b.HasOne("BackendApi.Domain.University", "University")
+                        .WithMany()
+                        .HasForeignKey("UniversityId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("University");
                 });
 
             modelBuilder.Entity("BackendApi.Domain.CourseProposal", b =>

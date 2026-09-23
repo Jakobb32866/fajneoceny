@@ -2,6 +2,7 @@ using BackendApi.Auth;
 using BackendApi.Data;
 using BackendApi.Domain;
 using BackendApi.Services;
+using BackendApi.Services.Admin;
 using BackendApi.Services.Community;
 using Microsoft.EntityFrameworkCore;
 
@@ -19,7 +20,12 @@ public record LessonDetail(
     bool IsShared,
     bool CanShare,
     int LikeCount,
-    ForkedFromDto? ForkedFrom);
+    ForkedFromDto? ForkedFrom,
+    // Why sharing is unavailable, so the client can explain a disabled switch
+    // rather than letting the author hit a 403 with no idea why.
+    string? ModerationLockReason,
+    DateTimeOffset? ShareBlockedUntil,
+    string? ShareBlockReason);
 public record ForkedFromDto(Guid LessonId, string AuthorName, bool OriginalStillShared, bool HasNewerVersion);
 public record FlashcardDto(Guid Id, string Question, string Answer, Difficulty Difficulty);
 public record UpsertNoteRequest(string Content);
@@ -122,18 +128,61 @@ public static class LessonEndpoints
             if (!hasNoteContent && !hasCards)
                 return Results.BadRequest("This lesson has no content to share yet.");
 
+            // A moderator took this lesson down. Without this check a takedown
+            // would be a suggestion: the author could simply re-share it.
+            if (lesson.ModerationLockedAt is not null)
+            {
+                return Results.Json(
+                    new { error = "moderation_locked", reason = lesson.ModerationLockReason },
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            var ban = await ShareBanQueries.ActiveBanAsync(db, currentUser.UserId, now);
+            if (ban is not null)
+            {
+                return Results.Json(
+                    new { error = "share_banned", reason = ban.Reason, until = ban.ExpiresAt },
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
+
             lesson.IsShared = true;
-            lesson.SharedAt = DateTimeOffset.UtcNow;
+            lesson.SharedAt = now;
+
+            db.ShareEvents.Add(new ShareEvent
+            {
+                LessonId = lesson.Id,
+                UserId = currentUser.UserId,
+                UniversityId = (await db.Users.Where(u => u.Id == currentUser.UserId)
+                    .Select(u => u.UniversityId).FirstOrDefaultAsync()),
+                Kind = ShareEventKind.Shared,
+                CreatedAt = now,
+            });
+
             await db.SaveChangesAsync();
             return Results.NoContent();
         }).WithTags("Lessons").RequireAuthorization();
 
-        app.MapDelete("/api/lessons/{id:guid}/share", async (Guid id, AppDbContext db) =>
+        app.MapDelete("/api/lessons/{id:guid}/share", async (Guid id, AppDbContext db, ICurrentUser currentUser) =>
         {
             var lesson = await db.Lessons.FirstOrDefaultAsync(l => l.Id == id);
             if (lesson is null) return Results.NotFound();
 
+            var wasShared = lesson.IsShared;
             lesson.IsShared = false;
+
+            if (wasShared)
+            {
+                db.ShareEvents.Add(new ShareEvent
+                {
+                    LessonId = lesson.Id,
+                    UserId = currentUser.UserId,
+                    UniversityId = (await db.Users.Where(u => u.Id == currentUser.UserId)
+                        .Select(u => u.UniversityId).FirstOrDefaultAsync()),
+                    Kind = ShareEventKind.Unshared,
+                });
+            }
+
             await db.SaveChangesAsync();
             return Results.NoContent();
         }).WithTags("Lessons").RequireAuthorization();
@@ -183,8 +232,12 @@ public static class LessonEndpoints
             .FirstOrDefaultAsync(l => l.Id == id);
         if (lesson is null) return null;
 
+        var activeBan = await ShareBanQueries.ActiveBanAsync(db, userId, DateTimeOffset.UtcNow);
+
         var canShare = lesson.Subject?.UniversityCourseId is not null
-            && await CommunityAuthorization.GetUniversityAsync(db, userId) is not null;
+            && await CommunityAuthorization.GetUniversityAsync(db, userId) is not null
+            && lesson.ModerationLockedAt is null
+            && activeBan is null;
 
         ForkedFromDto? forkedFrom = null;
         if (lesson.ForkedFromLessonId is not null)
@@ -211,6 +264,9 @@ public static class LessonEndpoints
             lesson.IsShared,
             canShare,
             lesson.LikeCount,
-            forkedFrom);
+            forkedFrom,
+            lesson.ModerationLockReason,
+            activeBan?.ExpiresAt,
+            activeBan?.Reason);
     }
 }

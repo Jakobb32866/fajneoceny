@@ -2,6 +2,8 @@ using BackendApi.Auth;
 using BackendApi.Domain;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace BackendApi.Data;
 
@@ -23,6 +25,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, ICurrentUser c
     public DbSet<UniversityCourse> UniversityCourses => Set<UniversityCourse>();
     public DbSet<CourseProposal> CourseProposals => Set<CourseProposal>();
     public DbSet<LessonLike> LessonLikes => Set<LessonLike>();
+    public DbSet<Admin> Admins => Set<Admin>();
+    public DbSet<AdminAuditEntry> AdminAuditEntries => Set<AdminAuditEntry>();
+    public DbSet<ShareEvent> ShareEvents => Set<ShareEvent>();
+    public DbSet<ShareBan> ShareBans => Set<ShareBan>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -155,6 +161,49 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, ICurrentUser c
             .IsUnique()
             .HasFilter("\"UniversityCourseId\" IS NOT NULL");
 
+        // Admin schema. Admin/AdminAuditEntry/ShareEvent/ShareBan are all
+        // cross-user by nature, so none of them is IOwnedByUser and none gets
+        // a query filter; the admin endpoints scope them explicitly instead.
+        modelBuilder.Entity<Admin>().Property(a => a.Email).HasMaxLength(320);
+        modelBuilder.Entity<Admin>().Property(a => a.DisplayName).HasMaxLength(200);
+        modelBuilder.Entity<Admin>().HasIndex(a => a.Email).IsUnique();
+        modelBuilder.Entity<Admin>().Property(a => a.Role).HasConversion<string>().HasMaxLength(20);
+        modelBuilder.Entity<Admin>()
+            .HasOne(a => a.University)
+            .WithMany()
+            .HasForeignKey(a => a.UniversityId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<AdminAuditEntry>().Property(e => e.Action).HasMaxLength(50);
+        modelBuilder.Entity<AdminAuditEntry>().Property(e => e.TargetType).HasMaxLength(50);
+        modelBuilder.Entity<AdminAuditEntry>().Property(e => e.Summary).HasMaxLength(500);
+        modelBuilder.Entity<AdminAuditEntry>().Property(e => e.Reason).HasMaxLength(1000);
+        modelBuilder.Entity<AdminAuditEntry>().HasIndex(e => new { e.TargetType, e.TargetId });
+        modelBuilder.Entity<AdminAuditEntry>().HasIndex(e => e.UniversityId);
+
+        modelBuilder.Entity<ShareEvent>().Property(e => e.Kind).HasConversion<string>().HasMaxLength(20);
+        modelBuilder.Entity<ShareEvent>().HasIndex(e => e.LessonId);
+
+        modelBuilder.Entity<ShareBan>().Property(b => b.Reason).HasMaxLength(1000);
+        modelBuilder.Entity<ShareBan>().HasIndex(b => new { b.UserId, b.ExpiresAt });
+
+        // SQLite stores DateTimeOffset as TEXT, and EF refuses to translate
+        // both ORDER BY (NotSupportedException) and WHERE comparisons over
+        // such a column — which is why the rest of this codebase sorts dates
+        // in memory. The admin stats and moderation history genuinely need to
+        // filter and sort by date in SQL, so the columns they touch are
+        // stored as Unix epoch milliseconds (INTEGER) instead. The domain
+        // types stay DateTimeOffset; only the storage changes.
+        foreach (var property in DateProperties(modelBuilder))
+        {
+            property.SetValueConverter(UtcEpochMillis);
+        }
+
+        foreach (var property in NullableDateProperties(modelBuilder))
+        {
+            property.SetValueConverter(UtcEpochMillisNullable);
+        }
+
         // Per-user data isolation: every owned entity is only ever visible
         // through a query scoped to the current request's user. Note that
         // EF's FindAsync(id) bypasses these global query filters entirely,
@@ -207,6 +256,20 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, ICurrentUser c
         {
             if (entry.State == EntityState.Added && entry.Entity.UserId == Guid.Empty)
             {
+                // CurrentUser.UserId is Guid.Empty for admin (and anonymous)
+                // requests, by design — the query filters then match nothing,
+                // so admin requests fail closed on owned data. Writing would
+                // instead silently persist a row that no query filter can
+                // ever return again, including the admin's own. That only
+                // happens if an endpoint's authorization is misconfigured, so
+                // fail loudly rather than corrupting data quietly.
+                if (currentUser.UserId == Guid.Empty)
+                {
+                    throw new InvalidOperationException(
+                        $"Refusing to save {entry.Entity.GetType().Name} with no owner: the current request has no " +
+                        "student identity. An admin or anonymous request reached a user-owned write path.");
+                }
+
                 entry.Entity.UserId = currentUser.UserId;
             }
         }
@@ -247,5 +310,45 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, ICurrentUser c
 
         await Lessons.Where(l => lessonIds.Contains(l.Id))
             .ExecuteUpdateAsync(s => s.SetProperty(l => l.ContentUpdatedAt, DateTimeOffset.UtcNow), cancellationToken);
+    }
+
+    /// <summary>
+    /// DateTimeOffset &lt;-&gt; Unix epoch milliseconds, so SQLite stores an
+    /// INTEGER that EF can translate into WHERE and ORDER BY. Read back as
+    /// UTC; these columns are only ever written as UTC.
+    /// </summary>
+    private static readonly ValueConverter<DateTimeOffset, long> UtcEpochMillis =
+        new(v => v.ToUnixTimeMilliseconds(), v => DateTimeOffset.FromUnixTimeMilliseconds(v));
+
+    private static readonly ValueConverter<DateTimeOffset?, long?> UtcEpochMillisNullable =
+        new(v => v == null ? null : v.Value.ToUnixTimeMilliseconds(),
+            v => v == null ? null : DateTimeOffset.FromUnixTimeMilliseconds(v.Value));
+
+    /// <summary>
+    /// The date columns stored as epoch millis. Deliberately an explicit list
+    /// rather than "every DateTimeOffset in the model": converting the
+    /// remaining columns would mean migrating live data for no present gain,
+    /// and a half-converted schema is easier to reason about when it is
+    /// written down than when it is inferred.
+    /// </summary>
+    private static IEnumerable<IMutableProperty> DateProperties(ModelBuilder modelBuilder)
+    {
+        yield return modelBuilder.Entity<Lesson>().Property(l => l.CreatedAt).Metadata;
+        yield return modelBuilder.Entity<Admin>().Property(a => a.CreatedAt).Metadata;
+        yield return modelBuilder.Entity<AdminAuditEntry>().Property(e => e.CreatedAt).Metadata;
+        yield return modelBuilder.Entity<ShareEvent>().Property(e => e.CreatedAt).Metadata;
+        yield return modelBuilder.Entity<ShareBan>().Property(b => b.StartsAt).Metadata;
+        yield return modelBuilder.Entity<ShareBan>().Property(b => b.ExpiresAt).Metadata;
+    }
+
+    /// <summary>Nullable counterparts of <see cref="DateProperties"/>.</summary>
+    private static IEnumerable<IMutableProperty> NullableDateProperties(ModelBuilder modelBuilder)
+    {
+        // Compared against a cutoff for the active-user stats.
+        yield return modelBuilder.Entity<User>().Property(u => u.LastLoginAt).Metadata;
+
+        // Only ever null-checked, but kept in the same units as the ban's
+        // other two dates so the row reads consistently in sqlite3.
+        yield return modelBuilder.Entity<ShareBan>().Property(b => b.LiftedAt).Metadata;
     }
 }

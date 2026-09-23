@@ -17,10 +17,13 @@ import { useState } from 'react';
 import { ActivityIndicator, useWindowDimensions, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { AdminAuthProvider, useAdminAuth } from './src/auth/AdminAuthContext';
 import { AuthProvider, useAuth } from './src/auth/AuthContext';
+import { AdminShell } from './src/components/AdminShell';
 import { AppHeader } from './src/components/AppHeader';
 import { AppNav } from './src/components/AppNav';
 import { RootNavigator } from './src/navigation/RootNavigator';
+import { AdminLoginScreen } from './src/screens/AdminLoginScreen';
 import { LoginScreen } from './src/screens/LoginScreen';
 import { theme } from './src/theme';
 import type { RootStackParamList } from './src/navigation/types';
@@ -85,13 +88,32 @@ function Gate({
   routeName: string | undefined;
 }) {
   const { status } = useAuth();
+  const { status: adminStatus } = useAdminAuth();
 
-  if (status === 'loading') {
+  // Admin mode is explicit, so a student signing in on a shared machine is
+  // never silently dropped into the admin panel. The one exception is a
+  // device that already has an admin session and no student one — there,
+  // showing the student login first would be pointless friction.
+  const [adminMode, setAdminMode] = useState(false);
+  const adminSessionOnly = adminStatus === 'signedIn' && status === 'signedOut';
+  const showAdmin = adminMode || adminSessionOnly;
+
+  if (status === 'loading' || adminStatus === 'loading') {
     return <LoadingScreen />;
   }
 
+  if (showAdmin) {
+    // Leaving admin mode also happens implicitly: signing out of the admin
+    // panel flips adminStatus, which drops this back to the student login.
+    return adminStatus === 'signedIn' ? (
+      <AdminShell />
+    ) : (
+      <AdminLoginScreen onCancel={() => setAdminMode(false)} />
+    );
+  }
+
   if (status === 'signedOut') {
-    return <LoginScreen />;
+    return <LoginScreen onAdminPress={() => setAdminMode(true)} />;
   }
 
   return <AuthenticatedShell navRef={navRef} routeName={routeName} />;
@@ -118,9 +140,11 @@ export default function App() {
       <SafeAreaProvider>
         {fontsLoaded ? (
           <AuthProvider>
-            <NavigationContainer ref={navRef} onReady={syncRoute} onStateChange={syncRoute}>
-              <Gate navRef={navRef} routeName={routeName} />
-            </NavigationContainer>
+            <AdminAuthProvider>
+              <NavigationContainer ref={navRef} onReady={syncRoute} onStateChange={syncRoute}>
+                <Gate navRef={navRef} routeName={routeName} />
+              </NavigationContainer>
+            </AdminAuthProvider>
           </AuthProvider>
         ) : (
           <LoadingScreen />

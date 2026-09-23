@@ -1,5 +1,6 @@
 using BackendApi.Auth;
 using BackendApi.Data;
+using BackendApi.Services.Admin;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 
@@ -10,6 +11,13 @@ public class FakeCurrentUser(Guid userId) : ICurrentUser
 {
     public Guid UserId { get; } = userId;
     public bool IsAuthenticated => true;
+}
+
+/// <summary>ICurrentAdmin stub for tests.</summary>
+public class FakeCurrentAdmin(Guid adminId) : ICurrentAdmin
+{
+    public Guid AdminId { get; } = adminId;
+    public bool IsAuthenticated => AdminId != Guid.Empty;
 }
 
 /// <summary>
@@ -49,6 +57,17 @@ public class TestDb : IAsyncDisposable
     }
 
     public AppDbContext For(Guid userId) => new(_options, new FakeCurrentUser(userId));
+
+    /// <summary>
+    /// A context as an admin request sees it: ICurrentUser.UserId is
+    /// Guid.Empty, exactly as CurrentUser yields for an admin token, so every
+    /// per-user query filter matches nothing. Admin code must reach data
+    /// through AdminQueries instead.
+    /// </summary>
+    public AppDbContext ForAdmin() => new(_options, new FakeCurrentUser(Guid.Empty));
+
+    /// <summary>An AdminContext over a context, for the given admin id.</summary>
+    public AdminContext AdminContextFor(AppDbContext db, Guid adminId) => new(db, new FakeCurrentAdmin(adminId));
 
     public async ValueTask DisposeAsync()
     {

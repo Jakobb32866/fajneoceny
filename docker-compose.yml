@@ -4,50 +4,64 @@ services:
       context: ./backend-api
     ports:
       - "8080:8080"
+    volumes:
+      # Everything that must survive `docker compose up --build`. Without
+      # this, recreating the container — which is how ANY config change is
+      # applied — silently destroys the database and every uploaded file.
+      - backend-data:/app/data
     environment:
       ASPNETCORE_ENVIRONMENT: Production
-      # Point flashcard generation at the local Ollama server (OpenAI-compatible
-      # endpoint). Leave Ai__BaseUrl empty to fall back to the offline heuristic
-      # generator instead. qwen2.5:3b is the smallest Qwen that reliably emits
-      # the JSON array the generator expects (~2 GB on disk, ~4 GB RAM, CPU-only).
-      Ai__BaseUrl: http://ollama:11434/v1
-      Ai__ApiKey: ollama          # not checked locally, but the field must be non-empty
-      Ai__Model: qwen2.5:3b
+      # Both point inside the mounted volume above.
+      ConnectionStrings__DefaultConnection: "Data Source=/app/data/app.db"
+      Storage__RootPath: /app/data/storage
+      # Flashcard generation, via any OpenAI-compatible /chat/completions
+      # endpoint. Set OPENAI_API_KEY in the gitignored .env next to this file.
+      # Leaving it empty is safe: the generator falls back to its offline
+      # heuristic rather than failing.
+      #
+      # To go back to a local Ollama instead, re-add the ollama service (see
+      # git history) and set Ai__BaseUrl=http://ollama:11434/v1 with any
+      # non-empty Ai__ApiKey.
+      Ai__BaseUrl: "${OPENAI_BASE_URL:-https://api.openai.com/v1}"
+      Ai__ApiKey: "${OPENAI_API_KEY:-}"
+      Ai__Model: "${OPENAI_MODEL:-gpt-4o-mini}"
+      # Text-to-speech via Google Cloud. Needs an API key with the
+      # Text-to-Speech API enabled; empty disables audio export only.
+      Tts__Provider: Google
+      Tts__Google__ApiKey: "${GOOGLE_TTS_API_KEY:-}"
+      Tts__Google__VoiceName: "${GOOGLE_TTS_VOICE:-pl-PL-Standard-F}"
       # App JWT signing. Jwt__Key is a dev-only placeholder — production MUST
       # override it with a long random secret kept out of source control.
       Jwt__Key: dev-only-placeholder-signing-key-change-me-32chars-min
       Jwt__Issuer: fajneoceny
       Jwt__Audience: fajneoceny-app
       Jwt__ExpiryMinutes: "43200"
+      # Admin tokens are signed with their own key and expire in hours, not
+      # days. Leave AdminKey empty and it falls back to Jwt__Key, which works
+      # but means one leaked secret mints both kinds of token — production
+      # should set a distinct value.
+      Jwt__AdminKey: ""
+      Jwt__AdminExpiryMinutes: "480"
+      # The single super-admin account, created/updated on every startup.
+      # Set both in the gitignored .env next to this file (same place as
+      # LAN_IP). PasswordHash is a HASH, never a plaintext password:
+      #
+      #   cd backend-api && dotnet run --no-launch-profile -- hash-password 'your password' | tail -1
+      #
+      # then in .env:
+      #   SUPER_ADMIN_EMAIL=you@example.com
+      #   SUPER_ADMIN_PASSWORD_HASH=AQAAAAIAAYag...
+      #
+      # Leaving them unset logs a warning and creates no admin account, which
+      # is fine for a dev stack that doesn't need the admin panel.
+      SuperAdmin__Email: "${SUPER_ADMIN_EMAIL:-}"
+      SuperAdmin__PasswordHash: "${SUPER_ADMIN_PASSWORD_HASH:-}"
       # Google Sign-In client id(s) allowed as the ID token audience.
       # Production MUST set this (uncomment and fill in the real OAuth client
       # id below). Left unset here so dev/self-host environments without
       # Google Sign-In configured still start — GoogleTokenVerifier skips the
       # audience check when no client ids are configured.
-      # Google__ClientIds__0: "your-client-id.apps.googleusercontent.com"
-    depends_on:
-      model-puller:
-        condition: service_completed_successfully
-
-  # Local LLM server exposing an OpenAI-compatible API at :11434.
-  ollama:
-    image: ollama/ollama:latest
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama-models:/root/.ollama   # persist pulled models across restarts
-
-  # One-shot: pulls the Qwen model into the shared volume, then exits. The
-  # backend waits for this to complete so the first quiz request doesn't race
-  # the download.
-  model-puller:
-    image: ollama/ollama:latest
-    depends_on:
-      - ollama
-    environment:
-      OLLAMA_HOST: http://ollama:11434
-    entrypoint: ["ollama", "pull", "qwen2.5:3b"]
-    restart: "no"
+      Google__ClientIds__0: "495592595870-klmp9mk043di5tg9kmpbhpalcn4q6g35.apps.googleusercontent.com"
 
   # Expo dev server. Web build at http://localhost:8081, and the native bundle
   # that Expo Go connects to over the LAN.
@@ -75,4 +89,6 @@ services:
       - "19002:19002"
 
 volumes:
-  ollama-models:
+  # Survives `docker compose up --build`. Removed only by an explicit
+  # `docker compose down -v`, which is the one command that will wipe it.
+  backend-data:

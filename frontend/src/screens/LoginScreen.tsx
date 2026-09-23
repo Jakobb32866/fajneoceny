@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, useWindowDimensions, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
 import { useAuth } from '../auth/AuthContext';
 import { googleErrorMessage, loginErrorMessage, registerErrorMessage } from '../auth/authErrors';
 import { LoginFeatures } from '../components/LoginFeatures';
@@ -14,7 +14,7 @@ import { theme } from '../theme';
 
 type Mode = 'login' | 'register';
 
-export function LoginScreen() {
+export function LoginScreen({ onAdminPress }: { onAdminPress?: () => void }) {
   const { signInWithEmail, register, signInWithGoogle, completeGoogleProfile } = useAuth();
 
   const { width } = useWindowDimensions();
@@ -247,6 +247,17 @@ export function LoginScreen() {
             <LoginFeatures />
           </View>
         </View>
+
+        {/* Deliberately understated: admins are a handful of people, and this
+            is not a door students need to notice. */}
+        {onAdminPress ? (
+          <Pressable
+            onPress={onAdminPress}
+            style={{ alignSelf: 'center', padding: theme.spacing[3], marginTop: theme.spacing[2] }}
+          >
+            <Text.Caption style={{ color: theme.colors.text.tertiary }}>Panel administratora</Text.Caption>
+          </Pressable>
+        ) : null}
       </ScrollView>
     </KeyboardAvoidingView>
   );

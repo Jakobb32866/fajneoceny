@@ -21,6 +21,10 @@ public class JwtTokenService(IOptions<JwtOptions> options)
             new Claim(JwtRegisteredClaimNames.Email, user.Email),
             new Claim(JwtRegisteredClaimNames.GivenName, user.FirstName),
             new Claim(JwtRegisteredClaimNames.FamilyName, user.LastName),
+
+            // Marks this as a STUDENT token. The default authorization policy
+            // requires it, so an admin token cannot reach a student route.
+            new Claim(AuthClaims.Actor, AuthClaims.ActorStudent),
         };
 
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_options.Key));

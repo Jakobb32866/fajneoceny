@@ -13,15 +13,18 @@ public static class UniversityEndpoints
     {
         var group = app.MapGroup("/api/universities").WithTags("Universities");
 
-        // Anonymous: used by the registration screen before the user is signed in.
+        // Anonymous: used by the registration screen before the user is signed
+        // in. The opt-out is explicit because Program.cs sets a FallbackPolicy,
+        // under which a route with no authorization metadata is student-only.
         group.MapGet("/", async (AppDbContext db) =>
         {
             var universities = await db.Universities
+                .Where(u => !u.IsArchived)
                 .OrderBy(u => u.Name)
                 .Select(u => new UniversityDto(u.Id, u.Name, u.ShortName))
                 .ToListAsync();
             return Results.Ok(universities);
-        });
+        }).AllowAnonymous();
 
         group.MapGet("/mine/courses", async (ICurrentUser currentUser, AppDbContext db) =>
         {
@@ -33,7 +36,7 @@ public static class UniversityEndpoints
             if (universityId is null) return Results.Ok(new List<UniversityCourseDto>());
 
             var courses = await db.UniversityCourses
-                .Where(c => c.UniversityId == universityId)
+                .Where(c => c.UniversityId == universityId && !c.IsArchived)
                 .OrderBy(c => c.Name)
                 .Select(c => new UniversityCourseDto(c.Id, c.Code, c.Name))
                 .ToListAsync();

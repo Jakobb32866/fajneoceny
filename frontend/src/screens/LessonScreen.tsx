@@ -18,6 +18,7 @@ import { ApiError } from '../api/errors';
 import { useCachedQuery } from '../hooks/useCachedQuery';
 import { RichNoteEditor } from '../components/RichNoteEditor';
 import { RenameModal } from '../components/RenameModal';
+import { Banner } from '../components/ui/Banner';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Chip } from '../components/ui/Chip';
@@ -259,6 +260,24 @@ export function LessonScreen({ route, navigation }: Props) {
         </Card>
       )}
 
+      {/* canShare goes false when a moderator locked this lesson or banned the
+          author from sharing. Without this the share card would simply vanish
+          and the student would never learn why. */}
+      {!lesson.canShare && (lesson.moderationLockReason || lesson.shareBlockedUntil) && (
+        <Card style={styles.shareCard}>
+          <Banner
+            message={
+              lesson.moderationLockReason
+                ? `Lekcja została ukryta przez moderatora: ${lesson.moderationLockReason}. Nie możesz udostępnić jej ponownie, dopóki moderator nie zdejmie blokady.`
+                : `Udostępnianie zablokowane do ${formatBlockDate(lesson.shareBlockedUntil!)}${
+                    lesson.shareBlockReason ? ` — ${lesson.shareBlockReason}` : ''
+                  }.`
+            }
+            variant="warning"
+          />
+        </Card>
+      )}
+
       {lesson.canShare && (
         <Card style={styles.shareCard}>
           <View style={styles.shareRow}>
@@ -459,3 +478,13 @@ const styles = StyleSheet.create({
   deckCreateButton: { flex: 1 },
   chipRow: { flexDirection: 'row', gap: theme.spacing[2] },
 });
+
+/** "do 24 marca, 18:00" — a ban expiry is only useful with the time of day. */
+function formatBlockDate(iso: string): string {
+  return new Date(iso).toLocaleString('pl-PL', {
+    day: 'numeric',
+    month: 'long',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}

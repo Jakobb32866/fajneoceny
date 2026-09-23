@@ -26,6 +26,18 @@ public class Lesson : IOwnedByUser
     public int LikeCount { get; set; }
 
     /// <summary>
+    /// Set when an admin takes the lesson down. While non-null the author
+    /// cannot re-share it (POST /api/lessons/{id}/share refuses), which is
+    /// what makes a takedown a sanction rather than a suggestion. Only an
+    /// admin can clear it. Holds only the CURRENT lock — the history of
+    /// every takedown lives in AdminAuditEntry.
+    /// </summary>
+    public DateTimeOffset? ModerationLockedAt { get; set; }
+
+    /// <summary>Shown to the author so a disabled share switch explains itself.</summary>
+    public string? ModerationLockReason { get; set; }
+
+    /// <summary>
     /// Bare scalar id of the lesson this was forked from — no navigation/FK,
     /// since the original may later be deleted (or unshared) without
     /// affecting the fork.

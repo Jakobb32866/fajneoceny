@@ -140,6 +140,16 @@ public static class SubjectEndpoints
                 if (university is null) return Results.BadRequest("You must set your university before proposing a course.");
                 if (string.IsNullOrEmpty(name)) return Results.BadRequest("Name is required.");
 
+                // Stop duplicates before they reach the moderation queue.
+                // Two near-identical courses ("Bazy danych" / "Bazy Danych")
+                // would split a community feed in half, and nothing short of
+                // a manual merge can put it back together afterwards.
+                if (await CourseNaming.IsNameTakenAsync(db, university.Id, name))
+                {
+                    return Results.Conflict(
+                        "Przedmiot o tej nazwie już istnieje na Twojej uczelni — wybierz go z listy zamiast zgłaszać nowy.");
+                }
+
                 var subject = new Subject { Name = name, Description = request.Description?.Trim() };
                 db.Subjects.Add(subject);
                 await db.SaveChangesAsync();

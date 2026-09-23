@@ -140,6 +140,11 @@ export interface LessonDetail {
   canShare: boolean;
   likeCount: number;
   forkedFrom: ForkedFromDto | null;
+  /** Set when a moderator took this lesson down; the author cannot re-share it. */
+  moderationLockReason: string | null;
+  /** Set while the author is banned from sharing anything at all. */
+  shareBlockedUntil: string | null;
+  shareBlockReason: string | null;
 }
 
 export type CommunitySort = 'likes' | 'published' | 'updated';
@@ -239,4 +244,155 @@ export interface AuthResponse {
 
 export interface ForkResult extends LessonSummary {
   subjectId: string;
+}
+
+// ---------------------------------------------------------------------------
+// Admin
+//
+// Admins are a separate account type from students: their own credentials,
+// their own token, and no student data of their own. Everything below is
+// reachable only with an admin token.
+// ---------------------------------------------------------------------------
+
+export type AdminRole = 'Admin' | 'SuperAdmin';
+
+export interface AdminAccount {
+  id: string;
+  email: string;
+  displayName: string;
+  role: AdminRole;
+  universityId: string | null;
+  universityName: string | null;
+  isDisabled: boolean;
+}
+
+export interface AdminLoginResponse {
+  token: string;
+  admin: AdminAccount;
+}
+
+export interface AdminProposal {
+  id: string;
+  name: string;
+  status: CourseProposalStatus;
+  proposerName: string;
+  proposerEmail: string;
+  createdAt: string;
+  reviewedAt: string | null;
+  reviewReason: string | null;
+}
+
+export interface AdminCourse {
+  id: string;
+  code: string | null;
+  name: string;
+  isArchived: boolean;
+  subjectCount: number;
+  sharedLessonCount: number;
+}
+
+export interface AdminLessonListItem {
+  id: string;
+  title: string;
+  authorId: string;
+  authorName: string;
+  courseId: string;
+  courseName: string;
+  likeCount: number;
+  deckCount: number;
+  cardCount: number;
+  sharedAt: string;
+  contentUpdatedAt: string;
+}
+
+export interface AdminLessonPage {
+  items: AdminLessonListItem[];
+  page: number;
+  pageSize: number;
+  totalCount: number;
+  totalPages: number;
+}
+
+export interface AdminLessonDetail {
+  id: string;
+  title: string;
+  noteContent: string | null;
+  decks: DeckDto[];
+  authorId: string;
+  authorName: string;
+  authorEmail: string;
+  courseId: string;
+  courseName: string;
+  likeCount: number;
+  sharedAt: string;
+  contentUpdatedAt: string;
+}
+
+/** Metadata only — a taken-down lesson's content is not readable by admins. */
+export interface AdminModeratedLesson {
+  id: string;
+  title: string;
+  authorName: string;
+  moderationLockedAt: string;
+  moderationLockReason: string | null;
+}
+
+export interface AdminUserListItem {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  sharedLessonCount: number;
+  lastLoginAt: string | null;
+  createdAt: string;
+  shareBlockedUntil: string | null;
+}
+
+export interface AdminUserPage {
+  items: AdminUserListItem[];
+  page: number;
+  pageSize: number;
+  totalCount: number;
+  totalPages: number;
+}
+
+export interface AdminUserDetail {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  createdAt: string;
+  lastLoginAt: string | null;
+  shareBlockedUntil: string | null;
+  shareBlockReason: string | null;
+  sharedLessons: AdminLessonListItem[];
+}
+
+export interface ShareBan {
+  id: string;
+  reason: string;
+  hours: number;
+  startsAt: string;
+  expiresAt: string;
+  liftedAt: string | null;
+  isActive: boolean;
+}
+
+export interface AdminUniversity {
+  id: string;
+  name: string;
+  shortName: string | null;
+  isArchived: boolean;
+  courseCount: number;
+  userCount: number;
+}
+
+export interface AdminStats {
+  lessonsCreatedToday: number;
+  lessonsCreatedLast7Days: number;
+  lessonsSharedToday: number;
+  lessonsSharedLast7Days: number;
+  totalUsers: number;
+  activeUsersToday: number;
+  activeUsersLast7Days: number;
 }
